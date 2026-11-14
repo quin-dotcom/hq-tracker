@@ -946,6 +946,13 @@ var Core = (function () {
       { job_key: r.appt_id + '|note|fu', action: 'note', payload: { contactId: r.contact_id, body: 'HQ Tracker | Closed on follow-up | Signed ' + fmtDate(r.signed_date) + ' | ' + (r.closer || '') } }
     ];
   }
+  // Follow-up closed out as a no: opportunity to Declined Proposal (the HQ Sales no-sale stage; status stays open, never 'lost'), plus a short note
+  function planFollowUpNo(r) {
+    return [
+      { job_key: r.appt_id + '|stage|funo', action: 'stage', payload: { contactId: r.contact_id, stage: 'declined' } },
+      { job_key: r.appt_id + '|note|funo', action: 'note', payload: { contactId: r.contact_id, body: 'HQ Tracker | Follow-up closed out, no sale | ' + (r.closer || '') } }
+    ];
+  }
   function planNotInterested(r, setter, note) {
     if (!note) return [];
     return [{ job_key: r.appt_id + '|ninote|' + String(r.rebook_note_at || '').replace(/\D/g, '').slice(0, 14), action: 'note', payload: { contactId: r.contact_id, body: 'HQ Tracker | Not interested (' + setter + '): ' + note } }];
@@ -953,7 +960,7 @@ var Core = (function () {
 
   return { setDayFn: setDayFn, day: day, between: between, addDays: addDays, norm: norm, buildMatcher: buildMatcher, applySync: applySync, metrics: metrics, active: active,
     periodRange: periodRange, lastYear: lastYear, targetMonths: targetMonths, closerQueues: closerQueues, rebookList: rebookList, lostLabel: lostLabel,
-    isLost: isLost, excluded: excluded, planFirstCall: planFirstCall, planFollowUp: planFollowUp, followOpen: followOpen, followClosed: followClosed, FOLLOW_OVERDUE: FOLLOW_OVERDUE, planNotInterested: planNotInterested, STATUS_FOR: STATUS_FOR, MONTHS: MONTHS, histMetrics: histMetrics, trackedMode: trackedMode, headline: headline, leaderboard: leaderboard, NON_PEOPLE: NON_PEOPLE, clientKey: clientKey, matchCloserHint: matchCloserHint, needsCloser: needsCloser, liveRows: liveRows, statRows: statRows, extraPre: extraPre, gapRow: gapRow, adminIdent: adminIdent, parseTracker: parseTracker, isTestName: isTestName, isTest: isTest, markSameDay: markSameDay, groupByContact: groupByContact, ghlExcluded: ghlExcluded, dupCheck: dupCheck, nameScore: nameScore, nameVariants: nameVariants };
+    isLost: isLost, excluded: excluded, planFirstCall: planFirstCall, planFollowUp: planFollowUp, planFollowUpNo: planFollowUpNo, followOpen: followOpen, followClosed: followClosed, FOLLOW_OVERDUE: FOLLOW_OVERDUE, planNotInterested: planNotInterested, STATUS_FOR: STATUS_FOR, MONTHS: MONTHS, histMetrics: histMetrics, trackedMode: trackedMode, headline: headline, leaderboard: leaderboard, NON_PEOPLE: NON_PEOPLE, clientKey: clientKey, matchCloserHint: matchCloserHint, needsCloser: needsCloser, liveRows: liveRows, statRows: statRows, extraPre: extraPre, gapRow: gapRow, adminIdent: adminIdent, parseTracker: parseTracker, isTestName: isTestName, isTest: isTest, markSameDay: markSameDay, groupByContact: groupByContact, ghlExcluded: ghlExcluded, dupCheck: dupCheck, nameScore: nameScore, nameVariants: nameVariants };
 })();
 
 // ---- Coaching.js
@@ -1296,11 +1303,13 @@ function enqueue_(row, jobs) {
   jobs.forEach(function (j) {
     if (have[j.job_key]) return;
     // a newer version supersedes older pending jobs of the same action for this appointment
-    t.rows.forEach(function (o) { if (o.appt_id === row.appt_id && o.action === j.action && (o.status === 'pending' || o.status === 'held' || o.status === 'failed')) o.status = 'superseded'; });
+    // notes only replace notes of the same kind (a first-call re-log replaces the older first-call note; a follow-up note never drops the first-call note)
+    t.rows.forEach(function (o) { if (o.appt_id === row.appt_id && o.action === j.action && (o.status === 'pending' || o.status === 'held' || o.status === 'failed') && (j.action !== 'note' || noteKind_(o.job_key) === noteKind_(j.job_key))) o.status = 'superseded'; });
     t.rows.push({ job_key: j.job_key, appt_id: row.appt_id, contact_id: row.contact_id, action: j.action, payload: JSON.stringify(j.payload), status: 'pending', tries: 0, created_at: now });
   });
   writeTab_('WriteBack', t.rows);
 }
+function noteKind_(key) { var v = String(key).split('|')[2] || ''; return /^v\d/.test(v) ? 'v' : v; }
 var BACKOFF_MIN = [0, 1, 5, 15, 60];
 function runWriteBack_() {
   var t = readTab_('WriteBack'), enabled = writebackEnabled_();
@@ -1621,7 +1630,7 @@ function api_closeFollowUp(tok, id, signedDate) { guardWrite_(tok);
     return { ok: true };
   });
 }
-// Close a follow-up out as a no: it leaves the closer's Follow-ups list. Not a sale; nothing is written to GHL.
+// Close a follow-up out as a no: it leaves the closer's Follow-ups list. Not a sale. Queues GHL jobs (stage Declined Proposal + note) that only run when write-back is on.
 function api_followUpNo(tok, id) { guardWrite_(tok);
   var me = requireUser_(tok, ['closer']);
   return withLock_(function () {
@@ -1629,7 +1638,8 @@ function api_followUpNo(tok, id) { guardWrite_(tok);
     if (r.closer !== me.name) throw new Error('Not your appointment');
     if (!Core.followOpen(r)) throw new Error('This follow-up is already closed');
     r.followup_closed = 'no'; r.followup_submitted_at = nowIso_(); r.followup_submitted_by = me.name;
-    writeTab_('Appointments', t.rows); log_(me.name, 'followup_no', id, '');
+    r.ghl_writeback = writebackEnabled_() ? 'pending' : 'held';
+    writeTab_('Appointments', t.rows); enqueue_(r, Core.planFollowUpNo(r)); log_(me.name, 'followup_no', id, '');
     return { ok: true };
   });
 }
