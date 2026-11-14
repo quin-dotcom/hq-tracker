@@ -1434,7 +1434,10 @@ function runWriteBack_() {
 // Tokens and codes are stored only as SHA-256 hashes. Mail is sent with MailApp from the deploying account (quin@hqenergy.ca).
 function hash_(s) { return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(s)).map(function (b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join(''); }
 function randomToken_() { return (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, ''); }
-function appUrl_() { return props_().getProperty('APP_URL') || ScriptApp.getService().getUrl(); }
+// Links in sign-in and invite emails open the custom domain (live Nov 14, 2026), which passes ?t= on to the app frame.
+// APP_URL can still override it, but an old value pointing at script.google.com is ignored.
+var TRACKER_URL = 'https://tracker.hqenergy.ca/';
+function appUrl_() { var u = String(props_().getProperty('APP_URL') || '').trim(); return u && !/script\.google(usercontent)?\.com/.test(u) ? u : TRACKER_URL; }
 function rosterByEmail_(email) { var e = String(email || '').trim().toLowerCase(); return readTab_('Roster').rows.filter(function (r) { return r.email && String(r.email).trim().toLowerCase() === e; })[0] || null; }
 function isActive_(r) { return !!r && r.access === 'on' && !!r.email && (!r.end_date || String(r.end_date).slice(0, 10) >= today_()); }
 function rateLimited_(key, max) { var c = CacheService.getScriptCache(), n = Number(c.get(key) || 0); if (n >= max) return true; c.put(key, String(n + 1), 1000); return false; }
