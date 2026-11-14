@@ -12,5 +12,22 @@
 </head>
 <body>
 <iframe src="https://script.google.com/macros/s/AKfycbw_HfF1MKkNCACJR0jcEUVXnYHwNnt4R297kiWxHL9LU50IKDg_2veBqPc3jglTVpaW/exec" title="HQ Tracker" allow="clipboard-write" referrerpolicy="no-referrer-when-downgrade"></iframe>
+<script>
+// Session bridge for HQ Tracker. The app runs in a Google Apps Script frame whose origin changes with each deployment,
+// and Safari clears or partitions storage inside third-party frames, so the session token is kept here instead.
+(function () {
+  var KEY = 'hqtracker.session';
+  function trusted(o) { try { var u = new URL(o); return u.protocol === 'https:' && /(^|\.)googleusercontent\.com$/.test(u.hostname); } catch (e) { return false; } }
+  window.addEventListener('message', function (ev) {
+    var d = ev.data;
+    if (!d || typeof d !== 'object' || typeof d.hqTracker !== 'string' || !trusted(ev.origin) || !ev.source) return;
+    try {
+      if (d.hqTracker === 'getToken') ev.source.postMessage({ hqTracker: 'token', token: localStorage.getItem(KEY) || null }, ev.origin);
+      else if (d.hqTracker === 'setToken' && typeof d.token === 'string' && d.token.length < 512) localStorage.setItem(KEY, d.token);
+      else if (d.hqTracker === 'clearToken') localStorage.removeItem(KEY);
+    } catch (e) {}
+  });
+})();
+</script>
 </body>
 </html>
