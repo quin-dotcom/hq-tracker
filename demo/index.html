@@ -56,7 +56,7 @@ h1{font-size:24px;line-height:1.2;letter-spacing:-.01em;margin:0 0 var(--s2)} h2
 .item .main{flex:1;min-width:0} .item .t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .item .s{font-size:14px;color:var(--mute)}
 .item.att{border-color:var(--g);box-shadow:inset 4px 0 0 var(--g)}
 .tag{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid var(--k)}
-.tag.att{background:var(--g);border-color:var(--g);color:var(--k)} .tag.mute{border-color:var(--line);color:var(--mute)}
+.tag.att{background:var(--g);border-color:var(--g);color:var(--k)} .tag.over{background:#FCEBEA;border-color:#F3C2BE;color:#B42318;white-space:nowrap} .item.over{border-color:#F3C2BE;box-shadow:inset 4px 0 0 #B42318} .tag.mute{border-color:var(--line);color:var(--mute)}
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:5;background:var(--w);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)} .tabs .tabin{display:flex;max-width:var(--max);margin:0 auto}
 .tabs button{flex:1;min-height:64px;border:0;background:none;font-size:13px;font-weight:600;color:var(--mute);cursor:pointer;position:relative}
 .tabs button.on{color:var(--k);box-shadow:inset 0 3px 0 var(--k)}
@@ -303,6 +303,14 @@ function __demoSeed() {
     // queues: two appointments with no closer, one with an unmatched setter spelling, one unknown name from GHL
     for (var q = 0; q < 2; q++) { var u = blank(); u.appt_id = 'demo-q' + q; u.contact_id = 'cq' + q; u.customer_name = cust(); u.calendar_name = 'HQ Virtual Solar Consultation'; u.booked_at = iso(Core.addDays(today, -3), 11, 0); u.appt_start = iso(Core.addDays(today, -1 + q), 15, 0); u.ghl_status = 'confirmed'; u.setter = 'Blake'; u.setter_raw = 'Blake Sample'; u.setter_match = 'exact'; rows.push(u); }
     var v = blank(); v.appt_id = 'demo-u'; v.contact_id = 'cu'; v.customer_name = cust(); v.calendar_name = 'HQ Virtual Solar Consultation'; v.booked_at = iso(Core.addDays(today, -2), 10, 0); v.appt_start = iso(Core.addDays(today, 2), 13, 0); v.ghl_status = 'confirmed'; v.setter_raw = 'Skyler'; v.setter_match = 'unmatched'; v.closer = 'Jordan'; v.closer_source = 'ghl'; rows.push(v);
+    // older unsigned shows: most were closed out as a no; a few are left overdue (Alex keeps two so his list shows the Overdue flag)
+    var alexOver = 0;
+    rows.slice().sort(function (a, b) { return a.appt_start < b.appt_start ? 1 : -1; }).forEach(function (r) {
+      if (!Core.followOpen(r) || Core.between(r.appt_start.slice(0, 10), today) <= 31) return;
+      if (r.closer === 'Alex' && alexOver < 2) { alexOver++; return; }
+      if (rnd() < 0.12) return;
+      r.followup_closed = 'no'; r.followup_submitted_by = r.closer; r.followup_submitted_at = iso(Core.addDays(r.appt_start.slice(0, 10), 20 + Math.floor(rnd() * 10)), 16, 0);
+    });
     writeTab_('Appointments', rows);
     appendRow_('SyncRuns', { run_at: new Date(Date.now() - 6 * 60000).toISOString(), mode: 'quick', events_read: 42, errors: '' });
     appendRow_('Unknowns', { kind: 'setter', value: 'Skyler', ghl_user_id: '', count: 1, first_seen: nowIso_(), last_seen: nowIso_(), status: 'open' });
@@ -852,9 +860,15 @@ var Core = (function () {
     // GHL 'confirmed' is ignored; GHL noshow/cancelled need no answers; GHL showed pre-fills Q1 and stays until Q2-Q4 are done
     var open = mine.filter(function (r) { return r.outcome === '' && r.ghl_status !== 'cancelled' && r.ghl_status !== 'noshow' && r.appt_start && ms(r.appt_start) <= ms(nowIso); }).sort(function (a, b) { return ms(b.appt_start) - ms(a.appt_start); });
     open.forEach(function (r) { r.prefill_q1 = r.ghl_status === 'showed' ? 'Showed' : ''; });
-    var follow = mine.filter(function (r) { return r.outcome === 'Showed' && r.first_call_result !== 'Signed' && String(r.followup_closed) !== 'true' && !r.signed_date && between(day(r.appt_start), asOf) <= 30; }).sort(function (a, b) { return ms(b.appt_start) - ms(a.appt_start); });
+    // Follow-ups stay until signed or closed out as a no (no 30-day cut-off). Past FOLLOW_OVERDUE days = overdue: listed first, oldest first; the rest newest first.
+    var follow = mine.filter(function (r) { return followOpen(r) && day(r.appt_start) && day(r.appt_start) <= asOf; });
+    follow.forEach(function (r) { r.fu_days = between(day(r.appt_start), asOf); r.fu_overdue = r.fu_days > FOLLOW_OVERDUE; });
+    follow.sort(function (a, b) { if (a.fu_overdue !== b.fu_overdue) return a.fu_overdue ? -1 : 1; return a.fu_overdue ? ms(a.appt_start) - ms(b.appt_start) : ms(b.appt_start) - ms(a.appt_start); });
     return { open: open, follow: follow };
   }
+  var FOLLOW_OVERDUE = 30;
+  function followClosed(r) { var v = String(r.followup_closed || '').toLowerCase(); return v === 'true' || v === 'no'; }
+  function followOpen(r) { return r.outcome === 'Showed' && r.first_call_result !== 'Signed' && !followClosed(r) && !r.signed_date; }
   function rebookList(rows, setterName, asOf) {
     return rows.filter(function (r) {
       if (r.setter !== setterName || excluded(r) || r.linked_to || !isLost(r)) return false;
@@ -939,7 +953,7 @@ var Core = (function () {
 
   return { setDayFn: setDayFn, day: day, between: between, addDays: addDays, norm: norm, buildMatcher: buildMatcher, applySync: applySync, metrics: metrics, active: active,
     periodRange: periodRange, lastYear: lastYear, targetMonths: targetMonths, closerQueues: closerQueues, rebookList: rebookList, lostLabel: lostLabel,
-    isLost: isLost, excluded: excluded, planFirstCall: planFirstCall, planFollowUp: planFollowUp, planNotInterested: planNotInterested, STATUS_FOR: STATUS_FOR, MONTHS: MONTHS, histMetrics: histMetrics, trackedMode: trackedMode, headline: headline, leaderboard: leaderboard, NON_PEOPLE: NON_PEOPLE, clientKey: clientKey, matchCloserHint: matchCloserHint, needsCloser: needsCloser, liveRows: liveRows, statRows: statRows, extraPre: extraPre, gapRow: gapRow, adminIdent: adminIdent, parseTracker: parseTracker, isTestName: isTestName, isTest: isTest, markSameDay: markSameDay, groupByContact: groupByContact, ghlExcluded: ghlExcluded, dupCheck: dupCheck, nameScore: nameScore, nameVariants: nameVariants };
+    isLost: isLost, excluded: excluded, planFirstCall: planFirstCall, planFollowUp: planFollowUp, followOpen: followOpen, followClosed: followClosed, FOLLOW_OVERDUE: FOLLOW_OVERDUE, planNotInterested: planNotInterested, STATUS_FOR: STATUS_FOR, MONTHS: MONTHS, histMetrics: histMetrics, trackedMode: trackedMode, headline: headline, leaderboard: leaderboard, NON_PEOPLE: NON_PEOPLE, clientKey: clientKey, matchCloserHint: matchCloserHint, needsCloser: needsCloser, liveRows: liveRows, statRows: statRows, extraPre: extraPre, gapRow: gapRow, adminIdent: adminIdent, parseTracker: parseTracker, isTestName: isTestName, isTest: isTest, markSameDay: markSameDay, groupByContact: groupByContact, ghlExcluded: ghlExcluded, dupCheck: dupCheck, nameScore: nameScore, nameVariants: nameVariants };
 })();
 
 // ---- Coaching.js
@@ -1542,7 +1556,7 @@ function repData_(c, me) {
   if (role === 'closer') {
     var q = Core.closerQueues(c.live, me.name, c.now, c.asOf);
     out.todo = { open: q.open.map(function (r) { return { id: r.appt_id, customer: r.customer_name, when: fmtT_(r.appt_start), setter: r.setter || r.setter_raw || '', prefill: r.prefill_q1 || '' }; }),
-      follow: q.follow.map(function (r) { return { id: r.appt_id, customer: r.customer_name, when: fmt_(r.appt_start), result: r.first_call_result, reason: r.not_signed_reason, days: Core.between(Core.day(r.appt_start), c.asOf) }; }) };
+      follow: q.follow.map(function (r) { return { id: r.appt_id, customer: r.customer_name, when: fmt_(r.appt_start), result: r.first_call_result, reason: r.not_signed_reason, days: r.fu_days, overdue: r.fu_overdue }; }), overdueDays: Core.FOLLOW_OVERDUE };
   } else {
     out.todo = { rebook: Core.rebookList(c.all, me.name, c.asOf).map(function (r) { var d = Core.between(Core.day(r.appt_start), c.asOf); return { id: r.appt_id, customer: r.customer_name, when: fmt_(r.appt_start), what: Core.lostLabel(r), days: d, overdue: d > 7, closer: r.closer || 'No closer', note: r.rebook_note || '' }; }) };
   }
@@ -1604,6 +1618,18 @@ function api_closeFollowUp(tok, id, signedDate) { guardWrite_(tok);
     r.followup_closed = 'true'; r.signed_date = signedDate; r.sale_type = 'Follow-up'; r.followup_submitted_at = nowIso_(); r.followup_submitted_by = me.name;
     r.ghl_writeback = writebackEnabled_() ? 'pending' : 'held';
     writeTab_('Appointments', t.rows); enqueue_(r, Core.planFollowUp(r)); log_(me.name, 'followup_closed', id, signedDate);
+    return { ok: true };
+  });
+}
+// Close a follow-up out as a no: it leaves the closer's Follow-ups list. Not a sale; nothing is written to GHL.
+function api_followUpNo(tok, id) { guardWrite_(tok);
+  var me = requireUser_(tok, ['closer']);
+  return withLock_(function () {
+    var t = readTab_('Appointments'), r = apptFor_(t.rows, id);
+    if (r.closer !== me.name) throw new Error('Not your appointment');
+    if (!Core.followOpen(r)) throw new Error('This follow-up is already closed');
+    r.followup_closed = 'no'; r.followup_submitted_at = nowIso_(); r.followup_submitted_by = me.name;
+    writeTab_('Appointments', t.rows); log_(me.name, 'followup_no', id, '');
     return { ok: true };
   });
 }
@@ -1915,7 +1941,7 @@ function demoRun() {
           if (k === 'api_syncNow') r = { ok: true, note: 'demo' };
           else if (k === 'requestSignIn') r = { ok: true };
           else {
-            if (DEMO.viewAs && /^(api_logFirstCall|api_closeFollowUp|api_rebookNote|api_rep|api_account|api_setPassword)$/.test(k)) args[0] = DEMO_TOKENS[DEMO.viewAs];
+            if (DEMO.viewAs && /^(api_logFirstCall|api_closeFollowUp|api_followUpNo|api_rebookNote|api_rep|api_account|api_setPassword)$/.test(k)) args[0] = DEMO_TOKENS[DEMO.viewAs];
             var f = __SRV(k); if (!f) throw new Error('Not available in the demo');
             r = f.apply(null, args);
             if (k === 'api_viewAs') DEMO.viewAs = args[1];
@@ -2058,7 +2084,7 @@ function repLoad() { if (S.viewAs) return api('api_viewAs', S.viewAs).then(funct
 function repPd(d) { var p = d.periods[S.period] || d.periods.month; return { me: d.me, numbers: p.numbers, coaching: p.coaching, status: p.status, period: { mode: p.mode, label: p.label } }; }
 function repView() {
   var d = S.rep, closer = d.me.role === 'closer', todoN = closer ? d.todo.open.length + d.todo.follow.length : d.todo.rebook.length;
-  var overdue = closer ? d.todo.open.length : d.todo.rebook.filter(function (x) { return x.overdue; }).length;
+  var overdue = closer ? d.todo.open.length + d.todo.follow.filter(function (x) { return x.overdue; }).length : d.todo.rebook.filter(function (x) { return x.overdue; }).length; // badge = needs action now: to log + overdue follow-ups
   var pd = repPd(d), cm = d.periods.month.coaching;
   var tabs = [['todo', 'To do', overdue], ['numbers', 'My numbers'], ['coaching', 'Coaching', cm && cm.gaps.length], ['board', 'Leaderboard']];
   var body = S.tab === 'todo' ? (closer ? closerTodo(d) : setterTodo(d)) : S.tab === 'numbers' ? repNumbers(pd) : S.tab === 'coaching' ? repCoaching(pd) : repBoard(d);
@@ -2071,9 +2097,14 @@ function closerTodo(d) {
   if (d.todo.open.length) out.push(h('h2', null, 'To log (' + d.todo.open.length + ')'), d.todo.open.map(function (a) {
     return h('button', { class: 'item att', onclick: function () { logSheet(a); } }, h('div', { class: 'main' }, h('div', { class: 't' }, a.customer), h('div', { class: 's' }, a.when + (a.setter ? ' · Setter ' + a.setter : ''))), a.prefill ? h('span', { class: 'tag mute' }, 'Showed in GHL') : null, h('span', { 'aria-hidden': 'true' }, '>'));
   }));
-  if (d.todo.follow.length) out.push(h('h2', null, 'Follow-ups (' + d.todo.follow.length + ')'), d.todo.follow.map(function (a) {
-    return h('button', { class: 'item', onclick: function () { followSheet(a); } }, h('div', { class: 'main' }, h('div', { class: 't' }, a.customer), h('div', { class: 's' }, a.when + ' · ' + a.result + (a.reason ? ' · ' + a.reason : '') + ' · day ' + a.days + ' of 30')), h('span', { 'aria-hidden': 'true' }, '>'));
-  }));
+  if (d.todo.follow.length) {
+    var od = d.todo.follow.filter(function (x) { return x.overdue; }).length, lim = d.todo.overdueDays || 30;
+    out.push(h('h2', null, 'Follow-ups (' + d.todo.follow.length + ')', od ? h('span', { class: 'tag over', style: 'margin-left:8px;vertical-align:middle' }, od + ' overdue') : null),
+      od ? h('p', { class: 'note' }, 'Overdue = more than ' + lim + ' days since the call. Mark each one signed or closed out as a no.') : null,
+      d.todo.follow.map(function (a) {
+        return h('button', { class: 'item' + (a.overdue ? ' over' : ''), onclick: function () { followSheet(a); } }, h('div', { class: 'main' }, h('div', { class: 't' }, a.customer), h('div', { class: 's' }, a.when + ' · ' + a.result + (a.reason ? ' · ' + a.reason : '') + ' · ' + (a.overdue ? a.days + ' days since the call' : 'day ' + a.days + ' of ' + lim))), a.overdue ? h('span', { class: 'tag over' }, 'Overdue') : null, h('span', { 'aria-hidden': 'true' }, '>'));
+      }));
+  }
   if (out.length === 1) out.push(h('div', { class: 'empty' }, 'All caught up. Appointments from ' + LF() + ' on show here after they start.'));
   return out;
 }
@@ -2096,9 +2127,12 @@ function logSheet(a) {
   s = sheet(h('div')); draw();
 }
 function followSheet(a) {
-  var dt = h('input', { type: 'date', max: new Date().toISOString().slice(0, 10), value: new Date().toISOString().slice(0, 10), 'aria-label': 'Signed date' });
+  var loc = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10); // local date, not UTC (evenings were showing tomorrow)
+  var dt = h('input', { type: 'date', max: loc, value: loc, 'aria-label': 'Signed date' });
   var s = sheet([h('h2', { style: 'margin-top:0' }, a.customer), h('div', { class: 'sub' }, 'First call ' + a.when + ' · ' + a.result), h('label', null, 'Date they signed'), dt,
-    h('div', { style: 'margin-top:16px' }, h('button', { class: 'btn block', disabled: ro(), onclick: function () { busy(this, api('api_closeFollowUp', a.id, dt.value)).then(function () { s.remove(); S.rep.todo.follow = S.rep.todo.follow.filter(function (x) { return x.id !== a.id; }); repView(); toast('Closed on follow-up'); repLoad(); }, fail); } }, 'Closed on follow-up'))]);
+    h('div', { style: 'margin-top:16px' }, h('button', { class: 'btn block', disabled: ro(), onclick: function () { busy(this, api('api_closeFollowUp', a.id, dt.value)).then(function () { s.remove(); S.rep.todo.follow = S.rep.todo.follow.filter(function (x) { return x.id !== a.id; }); repView(); toast('Closed on follow-up'); repLoad(); }, fail); } }, 'Closed on follow-up')),
+    h('div', { style: 'margin-top:12px' }, h('button', { class: 'btn ghost block', disabled: ro(), onclick: function () { var b = this; if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = 'Tap again to close out as a no'; return; } busy(b, api('api_followUpNo', a.id)).then(function () { s.remove(); S.rep.todo.follow = S.rep.todo.follow.filter(function (x) { return x.id !== a.id; }); repView(); toast('Closed out as a no'); repLoad(); }, fail); } }, 'Closed out, no sale')),
+    h('p', { class: 'note' }, a.overdue ? 'Overdue: ' + a.days + ' days since the call. It stays here until it is signed or closed out.' : 'Stays in Follow-ups until it is signed or closed out.')]);
 }
 function setterTodo(d) {
   var out = [h('h1', null, 'Get back on the calendar')];
