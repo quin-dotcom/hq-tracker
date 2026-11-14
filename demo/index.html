@@ -80,7 +80,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 /* final standings only: medal colours (approved for Last month) */
 .pos.m1{background:var(--g);border-color:var(--g);color:var(--k)} .pos.m2{background:var(--silver);border-color:var(--silver);color:var(--k)} .pos.m3{background:var(--bronze);border-color:var(--bronze);color:var(--w)}
 .coach .gap{border-left:4px solid var(--g);padding:var(--s1) 0 var(--s1) var(--s2);margin-bottom:var(--s2)}
-.coach .gap ol{margin:var(--s1) 0 0;padding-left:20px} .coach .gap li{margin-bottom:4px}
+.coach .gap ol{margin:var(--s1) 0 0;padding-left:20px} .coach .gap .fix{margin:var(--s1) 0 0} .coach .gap li{margin-bottom:4px}
 .coach .str{border-left:4px solid var(--k);padding:var(--s1) 0 var(--s1) var(--s2);margin-bottom:var(--s2)}
 .note{font-size:13px;color:var(--mute);margin:10px 0}
 .sheet{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:20;display:flex;align-items:flex-end;justify-content:center}
@@ -1016,19 +1016,21 @@ function p1(x, t) {
 function fr(n, d, t) {
   return `${p1(d > 0 ? n / d : 0, t)} (${n}/${d})`;
 }
-const SETTER_BLOCKER_FIX = [
-  ["At the door, ask who else is on the title and whether they'll be on the call; don't book until every decision-maker can attend.", "Use the two-time choice to pick a time when all homeowners are home.", "Write every decision-maker's name in the GHL handoff note."],
-  ["Ask roughly what their bill is every couple of months and write it in the GHL note so the closer can build the payback around it.", "Record budget or financing hurdles you hear at the door in the handoff note."],
-  ["Ask whether they've had other quotes and write who and roughly what in the GHL note.", "Tell the closer what the homeowner liked or disliked about those quotes."],
-  ['Ask the qualifying question before booking: "If everything genuinely made sense, is this something you guys would actually consider?"', "Book only genuine interest; note any timing hurdle in GHL so the closer is ready for it."],
-  ["Review three of these appointments with your lead and write the real reason in the GHL note next time."]
+// One fix per gap, rooted in the underlying objection (approved by Quin, Nov 14 2026).
+// Blocker fixes are indexed like RNAMES; only Price (1), Comparing quotes (2) and Timing (3) are ever flagged as a blocker gap.
+// Decision-maker absent is covered by the decision-maker stat gap, and Other is never flagged.
+const BLOCKERS = [1, 2, 3];
+const SETTER_BLOCKER_FIX = [null,
+  ["Price is usually a value gap. Spend more time on their why and the gap between where they are and where they want to be. Don't talk price, numbers or payback at the door."],
+  ["This is a trust objection. Don't defend or dig into other quotes. Smile, agree and keep building rapport; people go with who they trust."],
+  ["Timing is usually urgency hiding a value gap. Don't push on it. Learn their why and build the gap between where they are and where they'd want to be."],
+  null
 ];
-const CLOSER_BLOCKER_FIX = [
-  ["Read the setter note before the Meet and confirm every decision-maker will be on the call.", "If one is missing at the start, rebook to a time when all are there instead of pitching.", "Flag the booking back to the team lead so the setter fixes it at the door."],
-  ["Open discovery with the 1 to 3 ranking (financial, environmental, energy independence) and tie each option to their number one reason.", "Show payback for cash and the approved financing paths side by side in OpenSolar; never quote an unverified offer.", "When you ask which option to remove, let price drive it, then compare the remaining two on monthly cost and payback."],
-  ["Ask what the other quotes include and compare them on the same basis: system size, price per watt and warranty.", "Before you end the call, book a dated follow-up task in GHL within 48 hours.", "Follow up with the two options they kept and a clear next step."],
-  ["Ask what has to happen first before they would move forward, and agree a follow-up date on the call.", "Create the GHL follow-up task with an owner and due date before the call ends.", "Use their bill trend and approved incentive language to show the cost of waiting; no pressure."],
-  ["Write the real reason in your GHL note after every unsigned call so it can be coached.", "Review one of these calls with Quin this week."]
+const CLOSER_BLOCKER_FIX = [null,
+  ["Price is usually a value gap. Go deeper on their why and the gap before you show options, and tie every option to their number one reason."],
+  ["This is a trust objection. Don't knock other quotes. Listen, agree and keep building trust; they'll go with who they trust."],
+  ["Timing is usually urgency hiding a value gap. Go back to their why and what staying where they are is costing them. Don't push the date."],
+  null
 ];
 function topBlocker(m, team) {
   const tot = m.reasons.reduce((t, r) => t + r[0], 0);
@@ -1036,7 +1038,7 @@ function topBlocker(m, team) {
   let best = -1;
   let bv = -1;
   m.reasons.forEach((r, k) => {
-    if (r[0] < TARGETS.minBlocker || tot === 0) return;
+    if (BLOCKERS.indexOf(k) < 0 || r[0] < TARGETS.minBlocker || tot === 0) return;
     const share = r[0] / tot;
     const over = team && ttot > 0 ? share - team.reasons[k][0] / ttot : share;
     const ok = team ? over >= TARGETS.blockerOverTeam : share >= TARGETS.blockerShare;
@@ -1047,12 +1049,11 @@ function topBlocker(m, team) {
   });
   return best;
 }
-const COMPANY_BLOCKER_FIX = [
-  ["Make confirming every decision-maker part of the setter managers' booking audit.", "Tell closers to rebook instead of pitching when someone is missing.", "Track decision-maker-absent counts per setter in the weekly report."],
-  ["Have every closer show cash and the approved financing paths side by side in OpenSolar on every call.", "Role-play the remove-one step with price as the driver at the next team training.", "Check that setters record the bill size in the GHL note."],
-  ["Give closers a short checklist for comparing other quotes: system size, price per watt and warranty.", "Require a GHL follow-up task within 48 hours on every comparing-quotes show."],
-  ["Require a dated GHL follow-up task on every timing objection.", "Ask setter managers to make the qualifying question mandatory before booking."],
-  ["Ask closers to write the specific reason in the GHL note so it can be coached."]
+const COMPANY_BLOCKER_FIX = [null,
+  ["Run one team training on the root: value. More time on the why and building the gap."],
+  ["Run one team training on the root: trust. Build rapport, don't defend against other quotes."],
+  ["Run one team training on the root: value. More time on the why and building the gap."],
+  null
 ];
 const RNAMES = ["Decision-maker absent", "Price or payback", "Comparing quotes", "Timing", "Other"];
 function judge(st, card) {
@@ -1079,13 +1080,13 @@ function setterCard(m, team, targetMonths) {
   const card = { strengths: [], gaps: [], thin: [] };
   const tgtBooked = Math.round(TARGETS.bookedPerMonth * targetMonths);
   if (targetMonths < TARGETS.minTargetMonths) card.thin.push("Bookings (too little of the period counts yet, or it is their first-month ramp)");
-  else if (m.booked < tgtBooked) card.gaps.push({ text: `Booked ${m.booked} against a target of ${tgtBooked} (50 a month).`, fixes: ["Agree a daily door and conversation target with your lead in the morning huddle and log every door in Terros.", "Each night compare doors, conversations and bookings in Terros with your lead to find where they drop off.", "Drill Disarm and the gold question in role-play before you knock, then run them on every door."] });
+  else if (m.booked < tgtBooked) card.gaps.push({ text: `Booked ${m.booked} against a target of ${tgtBooked} (50 a month).`, fixes: ["Check doors versus bookings in Terros. If you're low on doors, knock more. If you're getting conversations but not bookings, drill the setter framework, discovery and objection handling with your manager."] });
   else card.strengths.push(`Booked ${m.booked} against a target of ${tgtBooked}. Strong door volume; keep the daily routine that got you here.`);
   judge([
-    { name: "Show rate", val: m.resolved ? m.shows / m.resolved : 0, team: team.resolved ? team.shows / team.resolved : 0, target: TARGETS.showRate, higherBetter: true, enough: m.resolved >= TARGETS.minResolved, shown: fr(m.shows, m.resolved, TARGETS.showRate), need: `${m.resolved} of ${TARGETS.minResolved} appointments`, praise: "Your homeowners show up prepared; keep running Prepare and Lock-in the same way.", fixes: ["Run the full Prepare and Lock-in on every booking: laptop or tablet, Hydro bill, both homeowners, 30 to 45 minutes seated, pen and paper.", "Offer two times and book the one they pick, then repeat back the question they want answered.", "Review every no-show with your lead within 24 hours and change one step on your next doors."] },
-    { name: "All decision-makers present", val: m.shows ? m.dmY / m.shows : 0, team: team.shows ? team.dmY / team.shows : 0, target: TARGETS.dmPresent, higherBetter: true, enough: m.shows >= TARGETS.minShows, shown: fr(m.dmY, m.shows, TARGETS.dmPresent), need: `${m.shows} of ${TARGETS.minShows} shows`, praise: "Closers get every owner on the call; that is why your shows convert.", fixes: SETTER_BLOCKER_FIX[0] },
-    { name: "Close rate on your shows", val: m.closed30 ? m.conv30c / m.closed30 : 0, team: team.closed30 ? team.conv30c / team.closed30 : 0, target: TARGETS.closeRate, higherBetter: true, enough: m.closed30 >= TARGETS.minShows, shown: fr(m.conv30c, m.closed30, TARGETS.closeRate), need: `${m.closed30} of ${TARGETS.minShows} shows past their 30-day window`, praise: "Your appointments are real opportunities; closers can tell from your notes.", fixes: ["Find their real reason with the gold question and write it in their words in the GHL note.", "Book only after the qualifying question gets a genuine yes.", "Ask the closer for feedback on your last five shows and fix the thinnest note."] },
-    { name: "Rebook rate (14 days)", val: m.lost ? m.reb14 / m.lost : 0, team: team.lost ? team.reb14 / team.lost : 0, target: TARGETS.rebookRate, higherBetter: true, enough: m.lost >= TARGETS.minLost, shown: fr(m.reb14, m.lost, TARGETS.rebookRate), need: `${m.lost} of ${TARGETS.minLost} cancels and no-shows past 14 days`, praise: "Homeowners you lose come back onto the calendar; keep working your list every day.", fixes: ["Work your Get back on the calendar list every day, newest first, and reach anything over 7 days today.", "Go back to their reason in your GHL note and offer two times when every decision-maker is home.", "Review each no-show with your lead within 24 hours to find the controllable gap before you rebook."] }
+    { name: "Show rate", val: m.resolved ? m.shows / m.resolved : 0, team: team.resolved ? team.shows / team.resolved : 0, target: TARGETS.showRate, higherBetter: true, enough: m.resolved >= TARGETS.minResolved, shown: fr(m.shows, m.resolved, TARGETS.showRate), need: `${m.resolved} of ${TARGETS.minResolved} appointments`, praise: "Your homeowners show up prepared; keep running Prepare and Lock-in the same way.", fixes: ["Run Prepare and Lock-in on every booking: both homeowners home, Hydro bill out, laptop or tablet ready, 30 to 45 minutes seated. Before you leave, ask: 'If anything comes up and you need to cancel or reschedule, will you please call and let us know?' Wait for a solid yes."] },
+    { name: "All decision-makers present", val: m.shows ? m.dmY / m.shows : 0, team: team.shows ? team.dmY / team.shows : 0, target: TARGETS.dmPresent, higherBetter: true, enough: m.shows >= TARGETS.minShows, shown: fr(m.dmY, m.shows, TARGETS.dmPresent), need: `${m.shows} of ${TARGETS.minShows} shows`, praise: "Closers get every owner on the call; that is why your shows convert.", fixes: ["Build enough value at the door that everyone on the title wants to be on the call, and don't book until they've agreed."] },
+    { name: "Close rate on your shows", val: m.closed30 ? m.conv30c / m.closed30 : 0, team: team.closed30 ? team.conv30c / team.closed30 : 0, target: TARGETS.closeRate, higherBetter: true, enough: m.closed30 >= TARGETS.minShows, shown: fr(m.conv30c, m.closed30, TARGETS.closeRate), need: `${m.closed30} of ${TARGETS.minShows} shows past their 30-day window`, praise: "Your appointments are real opportunities; closers can tell from your notes.", fixes: ["Only book after a real yes to: 'If everything made sense, is this something you'd actually consider?'"] },
+    { name: "Rebook rate (14 days)", val: m.lost ? m.reb14 / m.lost : 0, team: team.lost ? team.reb14 / team.lost : 0, target: TARGETS.rebookRate, higherBetter: true, enough: m.lost >= TARGETS.minLost, shown: fr(m.reb14, m.lost, TARGETS.rebookRate), need: `${m.lost} of ${TARGETS.minLost} cancels and no-shows past 14 days`, praise: "Homeowners you lose come back onto the calendar; keep working your list every day.", fixes: ["Reach every cancel or no-show within 24 hours and rebook while the reason is fresh."] }
   ], card);
   const tb = topBlocker(m, team);
   if (tb >= 0) card.gaps.push({ text: `Your shows lose more often than the team's to ${RNAMES[tb]} (${m.reasons[tb][0]} appointments).`, fixes: SETTER_BLOCKER_FIX[tb] });
@@ -1096,10 +1097,10 @@ function closerCard(m, team) {
   const sales = m.fcSales + m.fuSales;
   const tsales = team.fcSales + team.fuSales;
   judge([
-    { name: "Close rate on shows", val: m.closed30 ? m.conv30c / m.closed30 : 0, team: team.closed30 ? team.conv30c / team.closed30 : 0, target: TARGETS.closeRate, higherBetter: true, enough: m.closed30 >= TARGETS.minShows, shown: fr(m.conv30c, m.closed30, TARGETS.closeRate), need: `${m.closed30} of ${TARGETS.minShows} shows past their 30-day window`, praise: "You turn shows into decisions; share one recording with the team.", fixes: ["Run the framework in order and open discovery with the 1 to 3 ranking: financial, environmental, energy independence.", "Show three options, ask which to remove, discuss the remaining two against their ranking, then options-close.", "Review one recorded call a week with Quin and pick one discovery or close behaviour to change."] },
-    { name: "Sales signed on the first call", val: sales ? m.fcSales / sales : 0, team: tsales ? team.fcSales / tsales : 0, target: TARGETS.firstCallShare, higherBetter: true, enough: sales >= TARGETS.minSales, shown: fr(m.fcSales, sales, TARGETS.firstCallShare), need: `${sales} of ${TARGETS.minSales} sales`, praise: "You close on the call instead of chasing; keep asking for the decision.", fixes: ['After the options-close, ask for the decision on the call: "The next step would just be to authorize the agreement in OpenSolar and get the deposit in."', "Don't end on a verbal yes: get the agreement signed and the $1,000 deposit collected before you leave the Meet.", "Book Financeit or VanCity steps live on the call, not later."] },
-    { name: "Unsigned after 30 days", val: m.closed30 ? m.unsigned30 / m.closed30 : 0, team: team.closed30 ? team.unsigned30 / team.closed30 : 0, target: TARGETS.unsigned30Max, higherBetter: false, enough: m.closed30 >= TARGETS.minClosed, shown: fr(m.unsigned30, m.closed30, TARGETS.unsigned30Max), need: `${m.closed30} of ${TARGETS.minClosed} shows past 30 days`, praise: "Your follow-ups land; few deals go cold.", fixes: ["Before every unsigned call ends, agree the next step and create a GHL follow-up task with a due date.", "Follow up within 48 hours with the two options they kept.", "Work your Follow-ups list daily and log Closed on follow-up the day they sign."] },
-    { name: "Shows with all decision-makers", val: m.shows ? m.dmY / m.shows : 0, team: team.shows ? team.dmY / team.shows : 0, target: TARGETS.dmPresent, higherBetter: true, enough: m.shows >= TARGETS.minShows, shown: fr(m.dmY, m.shows, TARGETS.dmPresent), need: `${m.shows} of ${TARGETS.minShows} shows`, praise: "You protect your sits by getting every owner on the call.", fixes: CLOSER_BLOCKER_FIX[0] }
+    { name: "Close rate on shows", val: m.closed30 ? m.conv30c / m.closed30 : 0, team: team.closed30 ? team.conv30c / team.closed30 : 0, target: TARGETS.closeRate, higherBetter: true, enough: m.closed30 >= TARGETS.minShows, shown: fr(m.conv30c, m.closed30, TARGETS.closeRate), need: `${m.closed30} of ${TARGETS.minShows} shows past their 30-day window`, praise: "You turn shows into decisions; share one recording with the team.", fixes: ["Slow down discovery. Have them rank financial, environmental and energy independence 1 to 3, dig into their why, and build the gap before you show any options."] },
+    { name: "Sales signed on the first call", val: sales ? m.fcSales / sales : 0, team: tsales ? team.fcSales / tsales : 0, target: TARGETS.firstCallShare, higherBetter: true, enough: sales >= TARGETS.minSales, shown: fr(m.fcSales, sales, TARGETS.firstCallShare), need: `${sales} of ${TARGETS.minSales} sales`, praise: "You close on the call instead of chasing; keep asking for the decision.", fixes: ["After the options-close, ask for the decision on the call, and get the agreement signed and the deposit in before you leave the Meet."] },
+    { name: "Unsigned after 30 days", val: m.closed30 ? m.unsigned30 / m.closed30 : 0, team: team.closed30 ? team.unsigned30 / team.closed30 : 0, target: TARGETS.unsigned30Max, higherBetter: false, enough: m.closed30 >= TARGETS.minClosed, shown: fr(m.unsigned30, m.closed30, TARGETS.unsigned30Max), need: `${m.closed30} of ${TARGETS.minClosed} shows past 30 days`, praise: "Your follow-ups land; few deals go cold.", fixes: ["Before any unsigned call ends, agree a specific next step and follow-up date with them, then follow up on that date."] },
+    { name: "Shows with all decision-makers", val: m.shows ? m.dmY / m.shows : 0, team: team.shows ? team.dmY / team.shows : 0, target: TARGETS.dmPresent, higherBetter: true, enough: m.shows >= TARGETS.minShows, shown: fr(m.dmY, m.shows, TARGETS.dmPresent), need: `${m.shows} of ${TARGETS.minShows} shows`, praise: "You protect your sits by getting every owner on the call.", fixes: ["Confirm every decision-maker before the Meet starts. If one is missing, rebook instead of pitching."] }
   ], card);
   const tb = topBlocker(m, team);
   if (tb >= 0) card.gaps.push({ text: `You lose more first calls than the team to ${RNAMES[tb]} (${m.reasons[tb][0]} appointments, ${m.reasons[tb][1]} later signed).`, fixes: CLOSER_BLOCKER_FIX[tb] });
@@ -1109,20 +1110,20 @@ function companyCard(m, bookedTarget, needsSetter) {
   const card = { strengths: [], gaps: [], thin: [] };
   const sales = m.fcSales + m.fuSales;
   if (bookedTarget > 0) {
-    if (m.booked < bookedTarget) card.gaps.push({ text: `Booked ${m.booked} against ${bookedTarget} (50 a month for each ramped setter).`, fixes: ["Ask each setter manager for a daily door target per setter, tracked in Terros, in this week's report.", "Backfill any open setter seats; plan hiring ahead of the team's calendar.", "Put setters below 50% of target for two weeks after day 30 on a written plan."] });
+    if (m.booked < bookedTarget) card.gaps.push({ text: `Booked ${m.booked} against ${bookedTarget} (50 a month for each ramped setter).`, fixes: ["Check whether the shortfall is too few setters or setters below pace. Hire into open seats, or have managers drill framework and objections with whoever is behind."] });
     else card.strengths.push(`Booked ${m.booked} against ${bookedTarget}. The setting teams are hitting volume.`);
   }
   judge([
-    { name: "Show rate", val: m.resolved ? m.shows / m.resolved : 0, team: -1, target: TARGETS.showRate, higherBetter: true, enough: m.resolved >= TARGETS.minResolved, shown: fr(m.shows, m.resolved, TARGETS.showRate), need: `${m.resolved} of ${TARGETS.minResolved} appointments`, praise: "Booking preparation is working.", fixes: ["Have setter managers audit every booking against the pre-leave checklist and review every no-show weekly.", "Check that the automated confirmation texts are firing for every booking.", "Coach the lowest show-rate setter first; see the setter cards."] },
-    { name: "Shows with all decision-makers", val: m.shows ? m.dmY / m.shows : 0, team: -1, target: TARGETS.dmPresent, higherBetter: true, enough: m.shows >= TARGETS.minShows, shown: fr(m.dmY, m.shows, TARGETS.dmPresent), need: `${m.shows} of ${TARGETS.minShows} shows`, praise: "Decision-makers are on the calls.", fixes: ["Make decision-maker names a required part of every GHL handoff note.", "Tell closers to rebook, not pitch, when a decision-maker is missing.", "Review the DM-absent appointments with setter managers each week."] },
-    { name: "Close rate on shows", val: m.closed30 ? m.conv30c / m.closed30 : 0, team: -1, target: TARGETS.closeRate, higherBetter: true, enough: m.closed30 >= TARGETS.minShows, shown: fr(m.conv30c, m.closed30, TARGETS.closeRate), need: `${m.closed30} of ${TARGETS.minShows} shows past their 30-day window`, praise: "Closers are converting above the bar.", fixes: ["Review one recorded call per closer each week against the closing framework.", "Hold a one-on-one with any closer below the 20% bar from the Closer Playbook and agree one behaviour to change.", "Check setter note quality with closers; thin notes cost closes."] },
-    { name: "Sales signed on the first call", val: sales ? m.fcSales / sales : 0, team: -1, target: TARGETS.firstCallShare, higherBetter: true, enough: sales >= TARGETS.minSales, shown: fr(m.fcSales, sales, TARGETS.firstCallShare), need: `${sales} of ${TARGETS.minSales} sales`, praise: "Most deals close on the call.", fixes: ["Role-play the options-close and the OpenSolar agreement and deposit step with every closer.", "Make sure closers book Financeit and VanCity steps live."] },
-    { name: "Unsigned after 30 days", val: m.closed30 ? m.unsigned30 / m.closed30 : 0, team: -1, target: TARGETS.unsigned30Max, higherBetter: false, enough: m.closed30 >= TARGETS.minClosed, shown: fr(m.unsigned30, m.closed30, TARGETS.unsigned30Max), need: `${m.closed30} of ${TARGETS.minClosed} shows past 30 days`, praise: "Follow-up is working.", fixes: ["Require a GHL follow-up task with a due date on every unsigned show.", "Review each closer's Follow-ups list in your weekly one-on-one."] },
-    { name: "Rebook rate (14 days)", val: m.lost ? m.reb14 / m.lost : 0, team: -1, target: TARGETS.rebookRate, higherBetter: true, enough: m.lost >= TARGETS.minLost, shown: fr(m.reb14, m.lost, TARGETS.rebookRate), need: `${m.lost} of ${TARGETS.minLost} cancels and no-shows past 14 days`, praise: "Lost appointments are coming back onto the calendar.", fixes: ["Have setter managers check every setter's Get back on the calendar list in the morning huddle.", "Review items over 7 days and every not-interested reason in the weekly report.", "Coach the lowest rebook-rate setter first; see the setter cards."] }
+    { name: "Show rate", val: m.resolved ? m.shows / m.resolved : 0, team: -1, target: TARGETS.showRate, higherBetter: true, enough: m.resolved >= TARGETS.minResolved, shown: fr(m.shows, m.resolved, TARGETS.showRate), need: `${m.resolved} of ${TARGETS.minResolved} appointments`, praise: "Booking preparation is working.", fixes: ["Have managers check that every setter runs Prepare and Lock-in, including the cancel or reschedule ask, and review no-shows weekly."] },
+    { name: "Shows with all decision-makers", val: m.shows ? m.dmY / m.shows : 0, team: -1, target: TARGETS.dmPresent, higherBetter: true, enough: m.shows >= TARGETS.minShows, shown: fr(m.dmY, m.shows, TARGETS.dmPresent), need: `${m.shows} of ${TARGETS.minShows} shows`, praise: "Decision-makers are on the calls.", fixes: ["Make it a hard rule: setters don't book without every owner, and closers rebook instead of pitching."] },
+    { name: "Close rate on shows", val: m.closed30 ? m.conv30c / m.closed30 : 0, team: -1, target: TARGETS.closeRate, higherBetter: true, enough: m.closed30 >= TARGETS.minShows, shown: fr(m.conv30c, m.closed30, TARGETS.closeRate), need: `${m.closed30} of ${TARGETS.minShows} shows past their 30-day window`, praise: "Closers are converting above the bar.", fixes: ["Review one recorded call per closer each week, focused on discovery and building the gap."] },
+    { name: "Sales signed on the first call", val: sales ? m.fcSales / sales : 0, team: -1, target: TARGETS.firstCallShare, higherBetter: true, enough: sales >= TARGETS.minSales, shown: fr(m.fcSales, sales, TARGETS.firstCallShare), need: `${sales} of ${TARGETS.minSales} sales`, praise: "Most deals close on the call.", fixes: ["Role-play asking for the decision and getting the agreement and deposit done live."] },
+    { name: "Unsigned after 30 days", val: m.closed30 ? m.unsigned30 / m.closed30 : 0, team: -1, target: TARGETS.unsigned30Max, higherBetter: false, enough: m.closed30 >= TARGETS.minClosed, shown: fr(m.unsigned30, m.closed30, TARGETS.unsigned30Max), need: `${m.closed30} of ${TARGETS.minClosed} shows past 30 days`, praise: "Follow-up is working.", fixes: ["Go through each closer's Follow-ups list in your weekly one-on-one."] },
+    { name: "Rebook rate (14 days)", val: m.lost ? m.reb14 / m.lost : 0, team: -1, target: TARGETS.rebookRate, higherBetter: true, enough: m.lost >= TARGETS.minLost, shown: fr(m.reb14, m.lost, TARGETS.rebookRate), need: `${m.lost} of ${TARGETS.minLost} cancels and no-shows past 14 days`, praise: "Lost appointments are coming back onto the calendar.", fixes: ["Have managers check that cancels and no-shows are contacted within 24 hours."] }
   ], card);
   const tb = topBlocker(m);
   if (tb >= 0) card.gaps.push({ text: `Top first-call blocker company-wide: ${RNAMES[tb]} (${m.reasons[tb][0]} appointments, ${m.reasons[tb][1]} later signed).`, fixes: COMPANY_BLOCKER_FIX[tb] });
-  if (needsSetter > 0) card.gaps.push({ text: `${needsSetter} appointments have no matched setter, so setter numbers are understated.`, fixes: ["Clear the Needs a setter queue with one tap per appointment.", "Ask setters to type their full name in Appointment Setter Name."] });
+  if (needsSetter > 0) card.gaps.push({ text: `${needsSetter} appointments have no matched setter, so setter numbers are understated.`, fixes: ["Clear the Needs a setter queue."] });
   return card;
 }
 
@@ -2324,7 +2325,7 @@ function repNumbers(d) {
 function coachView(card) {
   if (!card) return h('p', { class: 'sub' }, 'Tracked from ' + LF() + '.');
   return h('div', { class: 'coach' },
-    card.gaps.length ? [h('h2', null, 'Work on'), card.gaps.map(function (g) { return h('div', { class: 'gap' }, h('div', null, g.text), h('ol', null, g.fixes.map(function (f) { return h('li', null, f); }))); })] : null,
+    card.gaps.length ? [h('h2', null, 'Work on'), card.gaps.map(function (g) { return h('div', { class: 'gap' }, h('div', null, g.text), g.fixes.length === 1 ? h('p', { class: 'fix' }, g.fixes[0]) : h('ol', null, g.fixes.map(function (f) { return h('li', null, f); }))); })] : null,
     card.strengths.length ? [h('h2', null, 'Strengths'), card.strengths.map(function (s) { return h('div', { class: 'str' }, s); })] : null,
     card.thin.length ? h('p', { class: 'note' }, 'Not enough data yet: ' + card.thin.join('; ') + '.') : null,
     !card.gaps.length && !card.strengths.length && !card.thin.length ? h('div', { class: 'empty' }, 'Not enough data yet for coaching this period.') : null);
