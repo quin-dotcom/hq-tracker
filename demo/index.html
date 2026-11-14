@@ -2174,7 +2174,7 @@ function top() { return [h('div', { class: 'top' }, h('div', { class: 'bar' }, l
 // ---------- sign-in ----------
 // Session bridge: when the app runs inside tracker.hqenergy.ca, the top page keeps the session token in its own storage,
 // because the Apps Script frame origin changes per deployment and Safari partitions or clears third-party frame storage.
-var BRIDGE_ORIGINS = ['https://tracker.hqenergy.ca', 'http://tracker.hqenergy.ca', 'https://quin-dotcom.github.io']; // http only until GitHub Pages issues the HTTPS certificate; remove it then
+var BRIDGE_ORIGINS = ['https://tracker.hqenergy.ca', 'https://quin-dotcom.github.io']; // HTTPS only (Enforce HTTPS on since Nov 14, 2026)
 function inFrame() { try { return window.top !== window.self; } catch (e) { return true; } }
 // the token itself only goes to the two trusted top pages (postMessage drops it when the top origin does not match)
 function bridgePost(msg) { if (!inFrame()) return; (msg.token ? BRIDGE_ORIGINS : ['*']).forEach(function (o) { try { window.top.postMessage(msg, o); } catch (e) {} }); }
