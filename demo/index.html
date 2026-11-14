@@ -1639,16 +1639,31 @@ function repData_(c, me) {
   ['month', 'last', 'year', 'all'].forEach(function (k) { out.leaderboard[k] = board_(c, repPeriod_(k, c.asOf), role); });
   var key = role === 'closer' ? 'closer' : 'setter';
   var mine = c.live.filter(function (r) { return r[key] === me.name; }), team = c.live.filter(function (r) { return role === 'closer' ? !!r.closer : (r.setter && r.setter !== META_DIRECT); });
-  ['month', 'last', 'year'].forEach(function (k) {
-    var full = repPeriod_(k, c.asOf), mode = Core.trackedMode(full, GO_LIVE), p = clip_(full, GO_LIVE), o = { label: full.label, mode: mode, numbers: null, coaching: null };
+  // one period's numbers, pace and (optionally) coaching; the same counting as People for that rep and period
+  function periodData(full, withCoach) {
+    var mode = Core.trackedMode(full, GO_LIVE), p = clip_(full, GO_LIVE), o = { label: full.label, mode: mode, numbers: null, coaching: null };
+    var ph = personHd_(c, full, role, me.name), hd = ph.hd;
     if (mode !== 'history') {
-      var m = Core.metrics(mine, p, c.asOf), tm = Core.metrics(team, p, c.asOf);
-      if (role === 'closer') { o.numbers = closerNums_(m); o.coaching = closerCard(m, tm); }
-      else { var tmo = Core.targetMonths(me, p, c.asOf, GO_LIVE); o.numbers = setterNums_(m, tmo); o.numbers.sales = { n: personHd_(c, full, 'setter', me.name).hd.sales }; /* same count as People and the leaderboard (tracker history included) */ o.numbers.booked = { n: bookedFor_(c, me.name, full), target: Math.ceil(TARGETS.bookedPerMonth * paceMonths_(c, me, full) - 1e-9), today: full.to >= c.asOf }; o.coaching = setterCard(m, tm, tmo); }
+      var m = Core.metrics(mine, p, c.asOf), tm = withCoach ? Core.metrics(team, p, c.asOf) : null;
+      if (role === 'closer') { o.numbers = closerNums_(m); if (withCoach) o.coaching = closerCard(m, tm); }
+      else { var tmo = Core.targetMonths(me, p, c.asOf, GO_LIVE); o.numbers = setterNums_(m, tmo); o.numbers.sales = { n: hd.sales }; /* same count as People and the leaderboard (tracker history included) */ o.numbers.booked = { n: bookedFor_(c, me.name, full), target: Math.ceil(TARGETS.bookedPerMonth * paceMonths_(c, me, full) - 1e-9), today: full.to >= c.asOf }; if (withCoach) o.coaching = setterCard(m, tm, tmo); }
     }
-    o.status = status_(c, full, role, me.name, current_(c, me.name) || me, personHd_(c, full, role, me.name).hd); // own pace only, same rules as People
-    out.periods[k] = o;
-  });
+    // tracker-history months (before the live start): the headline People shows, so the numbers screen is never empty
+    o.head = { appts: hd.appts, shows: hd.shows, resolved: hd.resolved, sales: hd.sales, signedFromShows: hd.signedFromShows };
+    o.status = status_(c, full, role, me.name, current_(c, me.name) || me, hd); // own pace only, same rules as People
+    return o;
+  }
+  ['month', 'last', 'year'].forEach(function (k) { out.periods[k] = periodData(repPeriod_(k, c.asOf), true); });
+  // My numbers month picker: every month from the rep's first activity (tracker history included) to last month, newest first
+  var y0 = Number(c.asOf.slice(0, 4)), m0 = Number(c.asOf.slice(5, 7)) - 1, lastP = repPeriod_('last', c.asOf), first = repFirstDay_(c, me, key);
+  out.months = [];
+  for (var yy = y0, mm = m0 - 1; ; mm--) {
+    if (mm < 0) { mm = 11; yy--; }
+    var mp = Core.periodRange(yy, mm, c.asOf); if (!first || mp.to < first) break;
+    var mk = 'm:' + yy + ':' + mm;
+    out.periods[mk] = mp.from === lastP.from ? out.periods.last : periodData(mp, false);
+    out.months.push({ key: mk, label: mp.label });
+  }
   if (role === 'closer') {
     var q = Core.closerQueues(c.live, me.name, c.now, c.asOf);
     var item = function (r) { return { id: r.appt_id, customer: r.customer_name, when: fmtT_(r.appt_start), start: r.appt_start, time: fmtT_(r.appt_start).split(', ').pop(), calendar: String(r.calendar_name || '').trim(), setter: r.setter || r.setter_raw || '', prefill: r.prefill_q1 || '', dueMin: r.due_min || 0 }; };
@@ -1660,6 +1675,14 @@ function repData_(c, me) {
   }
   out.targets = { booked: TARGETS.bookedPerMonth, show: Math.round(TARGETS.showRate * 100), close: Math.round(TARGETS.closeRate * 100), closer: TARGETS.closerMonthlyTarget || 0 };
   return out;
+}
+// first day this rep has any activity (appointments, bookings, tracker history) or their start date; months before it are not listed
+function repFirstDay_(c, me, key) {
+  var f = '', up = function (d) { d = String(d || '').slice(0, 10); if (/^\d{4}-\d{2}-\d{2}$/.test(d) && (!f || d < f)) f = d; };
+  c.hist.forEach(function (h) { if (h[key] === me.name) up(h.appt_date); });
+  c.all.forEach(function (r) { if (r[key] === me.name) { up(Core.day(r.appt_start)); if (key === 'setter') up(Core.day(r.booked_at)); } });
+  var r = current_(c, me.name) || me; if (r && r.start_date && r.added_by !== 'setup') up(r.start_date);
+  return f;
 }
 function api_rep(tok) { var me = requireUser_(tok, ['closer', 'setter']); return cached_('rep:' + me.name + ':' + Math.floor(Date.now() / 600000), function () { /* 10-minute bucket: Today and Past due depend on the clock */ return repData_(ctx_(), me); }); }
 // ---------- View as (CEO only, read-only) ----------
@@ -2199,15 +2222,22 @@ function prefetch() {
 
 // ---------- rep apps (closer and setter): at most 4 tabs ----------
 function repLoad() { if (S.viewAs) return api('api_viewAs', S.viewAs).then(function (d) { S.rep = d; repView(); }, fail); return api('api_rep').then(function (d) { S.rep = d; S.tab = S.tab || 'todo'; saveCache(); repView(); }, fail); }
-function repPd(d) { var p = d.periods[S.period] || d.periods.month; return { me: d.me, numbers: p.numbers, coaching: p.coaching, status: p.status, period: { mode: p.mode, label: p.label } }; }
+function repPd(d, k) { var p = d.periods[k || S.period] || d.periods.month; return { me: d.me, numbers: p.numbers, coaching: p.coaching, status: p.status, head: p.head, months: d.months || [], period: { mode: p.mode, label: p.label } }; }
 function repView() {
   var d = S.rep, closer = d.me.role === 'closer', todoN = closer ? d.todo.open.length + d.todo.follow.length : d.todo.rebook.length;
   var overdue = closer ? closerBuckets(d).due.length + d.todo.follow.filter(function (x) { return x.overdue; }).length : d.todo.rebook.filter(function (x) { return x.overdue; }).length; // badge = needs action now: past due to log + overdue follow-ups (not today's upcoming)
   var pd = repPd(d), cm = d.periods.month.coaching;
   var tabs = [['todo', 'To do', overdue], ['numbers', 'My numbers'], ['coaching', 'Coaching', cm && cm.gaps.length], ['board', 'Leaderboard']];
-  var body = S.tab === 'todo' ? (closer ? closerTodo(d) : setterTodo(d)) : S.tab === 'numbers' ? repNumbers(pd) : S.tab === 'coaching' ? repCoaching(pd) : repBoard(d);
+  var body = S.tab === 'todo' ? (closer ? closerTodo(d) : setterTodo(d)) : S.tab === 'numbers' ? repNumbers(repPd(d, S.numP && d.periods[S.numP] ? S.numP : 'month')) : S.tab === 'coaching' ? repCoaching(pd) : repBoard(d);
   render(h('div', { class: 'rep' }, top(), h('div', { class: 'wrap' }, body),
     h('nav', { class: 'tabs' }, h('div', { class: 'tabin' }, tabs.map(function (t) { return h('button', { class: S.tab === t[0] ? 'on' : '', onclick: function () { S.tab = t[0]; repView(); } }, h('span', { class: 'tl' }, t[1], t[2] ? h('span', { class: 'dot' }, t[2]) : null)); })))));
+}
+// My numbers: the same month dropdown + This year chip as the Leaderboard (every month back through the rep's history)
+function numbersPeriod(d) {
+  var k = S.numP && S.rep.periods[S.numP] ? S.numP : 'month', mOn = k !== 'year', opts = [['month', 'This month']].concat(d.months.map(function (m) { return [m.key, m.label]; }));
+  if (!mOn) opts.unshift(['', 'Month']);
+  var msel = h('select', { class: 'chip chipsel' + (mOn ? ' on' : ''), style: 'width:auto;min-width:136px', 'aria-label': 'Month', onchange: function () { if (!this.value) return; S.numP = this.value; repView(); } }, opts.map(function (o) { return h('option', { value: o[0], selected: o[0] === (mOn ? k : '') }, o[1]); }));
+  return h('div', { class: 'chips' }, msel, chips([['year', 'This year']], k, function (x) { S.numP = x; repView(); }));
 }
 function periodChips(d) { return chips([['month', 'This month'], ['last', 'Last month'], ['year', 'This year']], S.period, function (k) { S.period = k; repView(); }); }
 // Today = not started yet or started under an hour ago; Past due = more than an hour past the start and not logged. Re-sorted on the device so a cached copy stays right as time passes.
@@ -2302,9 +2332,15 @@ function myPace(d) {
     h('div', { class: 'mps' }, setter ? [mp(p, 'booked', '-', 'Booked'), mp(p, 'show', '-', 'Show rate')] : [mp(p, 'pace', '-', 'Sales'), mp(p, 'close', '-', 'Close rate')]),
     h('p', { class: 'note', style: 'margin:10px 0 0' }, 'Green = at or above target so far, red = behind. ' + (setter ? 'Target: ' + (t ? t.booked : 50) + ' bookings a month paced by day and ' + (t ? t.show : 60) + '% show rate.' : 'Target: ' + (t ? t.closer : 10) + ' sales a month paced by day and ' + (t ? t.close : 20) + '% close rate.')));
 }
+// months before the live start: the same headline People shows (from the 2025 and 2026 trackers; no decision-maker or reason detail)
+function histNums(d) {
+  var x = d.head || {}, setter = d.me.role === 'setter';
+  return [grid(stat('Appointments', x.appts || 0, 'From the tracker sheets'), stat('Shows', x.shows || 0, (x.resolved || 0) + ' with an outcome'), setter || !d.status ? stat(setter ? 'Sales from your sets' : 'Sales', x.sales || 0, 'Signed') : null),
+    h('p', { class: 'sub' }, 'Before ' + LF() + ' the numbers come from the 2025 and 2026 tracker sheets, so decision-maker, reason and rebook detail is not available.')];
+}
 function repNumbers(d) {
-  var out = [h('h1', null, 'My numbers'), periodChips(d), myPace(d)], n = d.numbers;
-  if (!n) return out.concat(h('p', { class: 'sub' }, 'Tracked from ' + LF() + '. Earlier months are on the Leaderboard.'));
+  var out = [h('h1', null, 'My numbers'), numbersPeriod(d), myPace(d)], n = d.numbers;
+  if (!n) return out.concat(histNums(d));
   if (d.period.mode === 'span') out.push(h('p', { class: 'sub' }, 'From ' + LF() + '.'));
   var pc = !!d.status; // the pace card already shows booked/show (setters) and sales/close rate (closers); don't repeat them with different counting
   if (d.me.role === 'setter') out.push(grid(
@@ -2555,7 +2591,7 @@ function accountSheet() {
 
 // ---------- View as (CEO only, read-only; the server refuses every save while it is on) ----------
 function viewAs(name, btn) {
-  return busy(btn, api('api_viewAs', name)).then(function (d) { S.ceoRep = { tab: S.ceoTab }; S.viewAs = name; S.rep = d; S.tab = 'todo'; S.period = 'month'; S.board = 'month'; repView(); }, fail);
+  return busy(btn, api('api_viewAs', name)).then(function (d) { S.ceoRep = { tab: S.ceoTab }; S.viewAs = name; S.rep = d; S.tab = 'todo'; S.period = 'month'; S.numP = 'month'; S.board = 'month'; repView(); }, fail);
 }
 function exitViewAs(btn) {
   busy(btn, api('api_viewAsExit')).then(function () {}, function () {});
