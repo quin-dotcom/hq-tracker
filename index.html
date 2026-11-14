@@ -11,7 +11,17 @@
 </style>
 </head>
 <body>
-<iframe src="https://script.google.com/macros/s/AKfycbw_HfF1MKkNCACJR0jcEUVXnYHwNnt4R297kiWxHL9LU50IKDg_2veBqPc3jglTVpaW/exec" title="HQ Tracker" allow="clipboard-write" referrerpolicy="no-referrer-when-downgrade"></iframe>
+<iframe id="app" src="https://script.google.com/macros/s/AKfycbw_HfF1MKkNCACJR0jcEUVXnYHwNnt4R297kiWxHL9LU50IKDg_2veBqPc3jglTVpaW/exec" title="HQ Tracker" allow="clipboard-write" referrerpolicy="no-referrer-when-downgrade"></iframe>
+<script>
+// Sign-in and invite links from the tracker's emails point here (https://tracker.hqenergy.ca/?t=...): pass the one-time link token on to the app frame,
+// then drop it from the address bar so it isn't kept in history or bookmarks.
+(function () {
+  var m = /[?&]t=([a-f0-9]{1,80})(&|$)/i.exec(location.search);
+  if (!m) return;
+  var f = document.getElementById('app'); f.src = f.src + '?t=' + m[1];
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+})();
+</script>
 <script>
 // Session bridge for HQ Tracker. The app runs in a Google Apps Script frame whose origin changes with each deployment,
 // and Safari clears or partitions storage inside third-party frames, so the session token is kept here instead.
