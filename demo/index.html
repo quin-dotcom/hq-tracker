@@ -965,11 +965,11 @@ var Core = (function () {
       { job_key: r.appt_id + '|note|fu', action: 'note', payload: { contactId: r.contact_id, body: 'HQ Tracker | Closed on follow-up | Signed ' + fmtDate(r.signed_date) + ' | ' + (r.closer || '') } }
     ];
   }
-  // Follow-up task in GHL: one per appointment, found again by the tag in its body; due 9 AM Pacific on the follow-up date
+  // Follow-up task in GHL: one per appointment, found again by the tag in its body; due 8 AM Vancouver time on the follow-up date (the server passes dueIso with the right offset)
   function taskTag(apptId) { return '[HQ Tracker follow-up ' + apptId + ']'; }
-  function planFollowUpTask(r, userId) {
+  function planFollowUpTask(r, userId, dueIso) {
     if (!r.followup_on) return [];
-    return [{ job_key: r.appt_id + '|task|' + r.followup_on, action: 'task', payload: { contactId: r.contact_id, title: 'Follow up: ' + (r.customer_name || 'customer'), body: 'Follow-up from the ' + fmtDate(day(r.appt_start)) + ' consult (' + (r.first_call_result || '') + '). ' + taskTag(r.appt_id), dueDate: r.followup_on + 'T17:00:00.000Z', assignedTo: userId || '', tag: taskTag(r.appt_id) } }];
+    return [{ job_key: r.appt_id + '|task|' + r.followup_on, action: 'task', payload: { contactId: r.contact_id, title: 'Follow up: ' + (r.customer_name || 'customer'), body: 'Follow-up from the ' + fmtDate(day(r.appt_start)) + ' consult (' + (r.first_call_result || '') + '). ' + taskTag(r.appt_id), dueDate: dueIso || r.followup_on + 'T15:00:00.000Z', assignedTo: userId || '', tag: taskTag(r.appt_id) } }];
   }
   function planTaskDone(r) { return r.followup_on ? [{ job_key: r.appt_id + '|taskdone', action: 'taskdone', payload: { contactId: r.contact_id, tag: taskTag(r.appt_id) } }] : []; }
   // Two-way close: an open follow-up whose HQ Sales opportunity moved to Contract Signed or Declined Proposal in GHL after the first call.
@@ -1227,7 +1227,7 @@ function withLock_(fn) { var lock = LockService.getScriptLock(); if (!lock.tryLo
 // GoHighLevel API client. The private integration key is read from Script Properties (GHL_TOKEN) and is never logged.
 // All writes go through ghlWrite_(), which refuses unless WRITEBACK_ENABLED is 'true' (off by default until Quin approves a test).
 function ghlToken_() { var t = props_().getProperty('GHL_TOKEN'); if (!t) throw new Error('GHL_TOKEN is not set in Script Properties'); return t; }
-function writebackEnabled_() { return props_().getProperty('WRITEBACK_ENABLED') === 'true'; }
+function writebackEnabled_() { return String(props_().getProperty('WRITEBACK_ENABLED') || '').replace(/["']/g, '').trim().toLowerCase() === 'true'; }
 function ghlFetch_(method, path, query, body, version) {
   var q = query ? '?' + Object.keys(query).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(query[k]); }).join('&') : '';
   var opt = { method: method, muteHttpExceptions: true, headers: { Authorization: 'Bearer ' + ghlToken_(), Version: version || '2021-04-15', Accept: 'application/json' } };
@@ -1386,12 +1386,12 @@ function noteKind_(key) { var v = String(key).split('|')[2] || ''; return /^v\d/
 var BACKOFF_MIN = [0, 1, 5, 15, 60];
 function runWriteBack_() {
   var t = readTab_('WriteBack'), enabled = writebackEnabled_();
-  var allow = String(props_().getProperty('WRITEBACK_TEST_CONTACT_IDS') || '').split(',').map(function (x) { return x.trim(); }).filter(String);
+  var allow = testContacts_(); // same lenient parsing as View as (spaces, semicolons, quotes; appointment ids count too)
   var pipeline = null, now = Date.now(), changed = false, conflict = {};
   readTab_('Appointments').rows.forEach(function (r) { if (r.ghl_conflict && String(r.ghl_conflict).indexOf('kept') < 0) conflict[r.appt_id] = 1; });
   t.rows.forEach(function (j) {
     if (j.status !== 'pending' && j.status !== 'failed' && j.status !== 'held') return;
-    if (!enabled || (allow.length && allow.indexOf(j.contact_id) < 0)) { if (j.status !== 'held') { j.status = 'held'; j.last_error = enabled ? 'not in test allowlist' : 'write-back off'; changed = true; } return; }
+    if (!enabled || (allow.length && allow.indexOf(String(j.contact_id)) < 0 && allow.indexOf(String(j.appt_id)) < 0)) { if (j.status !== 'held') { j.status = 'held'; j.last_error = enabled ? 'not in test allowlist' : 'write-back off'; changed = true; } return; }
     // GHL disagrees with the closer: hold the status write until Quin picks Keep closer or Use GHL
     if (j.action === 'status' && conflict[j.appt_id]) { if (j.last_error !== 'conflict') { j.status = 'held'; j.last_error = 'conflict'; changed = true; } return; }
     var tries = Number(j.tries) || 0;
@@ -1695,7 +1695,10 @@ function api_viewAs(tok, name) {
   if (!rep || (rep.role !== 'closer' && rep.role !== 'setter')) throw new Error('Pick a closer or setter');
   CacheService.getScriptCache().put(impKey_(tok), rep.name, 21600);
   log_(me.name, 'view_as_start', '', rep.name);
-  var d = cached_('rep:' + rep.name + ':' + Math.floor(Date.now() / 600000), function () { return repData_(c, rep); }); d.viewingAs = true; return d;
+  var d = cached_('rep:' + rep.name + ':' + Math.floor(Date.now() / 600000), function () { return repData_(c, rep); }); d.viewingAs = true;
+  var tc = testContacts_(); d.actIds = tc.length ? c.all.filter(function (r) { return r.closer === rep.name && isTestAppt_(r, tc); }).map(function (r) { return r.appt_id; }) : [];
+  d.testLog = { on: tc.length > 0, n: d.actIds.length };
+  return d;
 }
 function api_viewAsExit(tok) { var me = requireUser_(tok, ['admin']), was = viewingAs_(tok); CacheService.getScriptCache().remove(impKey_(tok)); if (was) log_(me.name, 'view_as_end', '', was); return { ok: true }; }
 // first call after sign-in: who you are plus your first screen, in one round trip
@@ -1705,8 +1708,7 @@ function api_boot(tok) {
   return { me: { name: me.name, role: me.role }, rep: api_rep(tok) };
 }
 function apptFor_(rows, id) { var r = rows.filter(function (x) { return x.appt_id === id; })[0]; if (!r) throw new Error('Appointment not found'); return r; }
-function api_logFirstCall(tok, id, a) { guardWrite_(tok);
-  var me = requireUser_(tok, ['closer']);
+function api_logFirstCall(tok, id, a) { var me = closerActor_(tok, id);
   if (['Showed', 'No-show', 'Cancelled', 'Rescheduled'].indexOf(a.outcome) < 0) throw new Error('Pick what happened');
   if (a.outcome === 'Showed') {
     if (['Yes', 'No'].indexOf(a.dms) < 0 || ['Signed', 'Said no', 'No decision'].indexOf(a.result) < 0) throw new Error('Answer every question');
@@ -1719,58 +1721,69 @@ function api_logFirstCall(tok, id, a) { guardWrite_(tok);
     if (r.closer !== me.name) throw new Error('Not your appointment');
     var now = nowIso_(), show = a.outcome === 'Showed';
     r.outcome = a.outcome; r.all_dms_present = show ? a.dms : ''; r.first_call_result = show ? a.result : ''; r.not_signed_reason = show && a.result !== 'Signed' ? a.reason : '';
-    r.first_call_submitted_at = now; r.first_call_submitted_by = me.name;
+    r.first_call_submitted_at = now; r.first_call_submitted_by = me.by;
     if (show && a.result === 'Signed') { r.signed_date = Core.day(r.appt_start); r.sale_type = 'First call'; } else if (r.sale_type === 'First call') { r.signed_date = ''; r.sale_type = ''; }
     if (Core.isLost(r) && !r.rebook_status && !r.linked_to) r.rebook_status = 'open';
     if (!Core.isLost(r) && r.rebook_status === 'open') r.rebook_status = '';
     if (r.ghl_conflict && Core.STATUS_FOR[r.outcome] && r.ghl_conflict.indexOf(Core.STATUS_FOR[r.outcome] + ' ') === 0) r.ghl_conflict = '';
     var hadTask = r.followup_on, fu = show && a.result !== 'Signed' ? String(a.followOn || '') : '';
     var jobs = Core.planFirstCall(r, now.replace(/\D/g, '').slice(0, 14));
-    if (fu) { r.followup_on = fu; jobs = jobs.concat(Core.planFollowUpTask(r, closerGhlId_(r))); }
+    if (fu) { r.followup_on = fu; jobs = jobs.concat(Core.planFollowUpTask(r, closerGhlId_(r), followDue_(fu))); }
     else if (hadTask) { jobs = jobs.concat(Core.planTaskDone(r)); r.followup_on = ''; }
     if (jobs.length) r.ghl_writeback = writebackEnabled_() ? 'pending' : 'held';
     writeTab_('Appointments', t.rows); enqueue_(r, jobs);
-    log_(me.name, 'first_call', id, a);
+    log_(me.by, 'first_call', id, a);
     return { ok: true };
   });
 }
-function api_closeFollowUp(tok, id, signedDate) { guardWrite_(tok);
-  var me = requireUser_(tok, ['closer']);
+function api_closeFollowUp(tok, id, signedDate) { var me = closerActor_(tok, id);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(signedDate)) || signedDate > today_()) throw new Error('Pick the date they signed');
   return withLock_(function () {
     var t = readTab_('Appointments'), r = apptFor_(t.rows, id);
     if (r.closer !== me.name) throw new Error('Not your appointment');
     if (signedDate < Core.day(r.appt_start)) throw new Error('The signed date is before the appointment');
-    r.followup_closed = 'true'; r.signed_date = signedDate; r.sale_type = 'Follow-up'; r.followup_submitted_at = nowIso_(); r.followup_submitted_by = me.name; r.followup_source = 'app';
+    r.followup_closed = 'true'; r.signed_date = signedDate; r.sale_type = 'Follow-up'; r.followup_submitted_at = nowIso_(); r.followup_submitted_by = me.by; r.followup_source = 'app';
     r.ghl_writeback = writebackEnabled_() ? 'pending' : 'held';
-    writeTab_('Appointments', t.rows); enqueue_(r, Core.planFollowUp(r).concat(Core.planTaskDone(r))); log_(me.name, 'followup_closed', id, signedDate);
+    writeTab_('Appointments', t.rows); enqueue_(r, Core.planFollowUp(r).concat(Core.planTaskDone(r))); log_(me.by, 'followup_closed', id, signedDate);
     return { ok: true };
   });
 }
+// Who is logging a closer's appointment. Normally the closer. While the CEO is in View as, writes stay blocked except for
+// appointments of write-back test contacts (WRITEBACK_TEST_CONTACT_IDS): then the CEO logs for that closer and is recorded as "Quin for <closer>".
+// tolerant of spaces, semicolons and quotes in the property; an appointment id in the list also counts
+function testContacts_() { return String(props_().getProperty('WRITEBACK_TEST_CONTACT_IDS') || '').split(/[\s,;]+/).map(function (x) { return x.replace(/["']/g, '').trim(); }).filter(String); }
+function isTestAppt_(r, tc) { tc = tc || testContacts_(); return tc.indexOf(String(r.contact_id)) >= 0 || tc.indexOf(String(r.appt_id)) >= 0; }
+function closerActor_(tok, id) {
+  var as = viewingAs_(tok);
+  if (!as) { var me = requireUser_(tok, ['closer']); return { name: me.name, by: me.name }; }
+  var admin = requireUser_(tok, ['admin']), r = apptFor_(readTab_('Appointments').rows, id);
+  if (!isTestAppt_(r)) guardWrite_(tok); // throws: read-only for everything else
+  return { name: as, by: admin.name + ' for ' + as };
+}
+// GHL task due time: 8:00 AM in the tracker's time zone (America/Vancouver) on the follow-up date, with that date's real UTC offset
+function followDue_(d) { var off = Utilities.formatDate(new Date(d + 'T16:00:00Z'), TZ, 'XXX'); return new Date(d + 'T08:00:00' + (off === 'Z' ? '+00:00' : off)).toISOString(); }
 function checkFollowDate_(d) { var t = today_(); if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d)) || d < t || d > Core.addDays(t, 366)) throw new Error('Pick a follow-up date from today on'); }
 // the closer's GHL user (for task assignment): the appointment's GHL user, else the roster link
 function closerGhlId_(r) { if (r.closer_id) return r.closer_id; var u = readTab_('Roster').rows.filter(function (x) { return x.name === r.closer; })[0]; return u ? String(u.ghl_user_id || '') : ''; }
 // Change the follow-up date: updates the GHL task due date (queued behind the write-back switch)
-function api_setFollowUpDate(tok, id, date) { guardWrite_(tok);
-  var me = requireUser_(tok, ['closer']); checkFollowDate_(date);
+function api_setFollowUpDate(tok, id, date) { var me = closerActor_(tok, id); checkFollowDate_(date);
   return withLock_(function () {
     var t = readTab_('Appointments'), r = apptFor_(t.rows, id);
     if (r.closer !== me.name) throw new Error('Not your appointment');
     if (!Core.followOpen(r)) throw new Error('This follow-up is already closed');
-    r.followup_on = date; writeTab_('Appointments', t.rows); enqueue_(r, Core.planFollowUpTask(r, closerGhlId_(r))); log_(me.name, 'followup_date', id, date);
+    r.followup_on = date; writeTab_('Appointments', t.rows); enqueue_(r, Core.planFollowUpTask(r, closerGhlId_(r), followDue_(date))); log_(me.by, 'followup_date', id, date);
     return { ok: true };
   });
 }
 // Close a follow-up out as a no: it leaves the closer's Follow-ups list. Not a sale. Queues GHL jobs (stage Declined Proposal + note) that only run when write-back is on.
-function api_followUpNo(tok, id) { guardWrite_(tok);
-  var me = requireUser_(tok, ['closer']);
+function api_followUpNo(tok, id) { var me = closerActor_(tok, id);
   return withLock_(function () {
     var t = readTab_('Appointments'), r = apptFor_(t.rows, id);
     if (r.closer !== me.name) throw new Error('Not your appointment');
     if (!Core.followOpen(r)) throw new Error('This follow-up is already closed');
-    r.followup_closed = 'no'; r.followup_submitted_at = nowIso_(); r.followup_submitted_by = me.name; r.followup_source = 'app';
+    r.followup_closed = 'no'; r.followup_submitted_at = nowIso_(); r.followup_submitted_by = me.by; r.followup_source = 'app';
     r.ghl_writeback = writebackEnabled_() ? 'pending' : 'held';
-    writeTab_('Appointments', t.rows); enqueue_(r, Core.planFollowUpNo(r).concat(Core.planTaskDone(r))); log_(me.name, 'followup_no', id, '');
+    writeTab_('Appointments', t.rows); enqueue_(r, Core.planFollowUpNo(r).concat(Core.planTaskDone(r))); log_(me.by, 'followup_no', id, '');
     return { ok: true };
   });
 }
@@ -1802,7 +1815,10 @@ function people_(c, p, role) {
   c.hist.forEach(function (h) { var d = String(h.appt_date).slice(0, 10); if (d >= p.from && d <= p.to && h[key]) names[h[key]] = 1; });
   return Object.keys(names).filter(function (n) { return !isAdminName_(c, n) && (role === 'setter' ? (n === META_DIRECT || !Core.NON_PEOPLE[n]) : !Core.NON_PEOPLE[n]); });
 }
-function api_dashboard(tok, year, pk) { requireUser_(tok, ['admin']); return dashCached_(year, pk); }
+function api_dashboard(tok, year, pk) { requireUser_(tok, ['admin']); var p = clampPeriod_(year, pk, today_()); return dashCached_(p.year, p.pk); }
+// never a future year or month (Pacific time decides the current month); an older client asking for one gets the current month
+function clampPeriod_(year, pk, asOf) { var cy = Number(asOf.slice(0, 4)), cm = Number(asOf.slice(5, 7)) - 1; year = Number(year) || cy; pk = String(pk);
+  if (year > cy) return { year: cy, pk: String(cm) }; if (year === cy && /^\d+$/.test(pk) && Number(pk) > cm) pk = String(cm); return { year: year, pk: pk }; }
 // People status = pace through the month (Quin, Nov 13 2026).
 // Setters: On track when bookings so far >= ceil(50 x elapsed share of the period's months) AND show rate >= showRate (60%);
 //   past months use the full target; a rep added after the live start has 30 days of ramp (no booking target).
@@ -1883,12 +1899,12 @@ function dashData_(year, pk) {
   var rampedMonths = 0; c.roster.forEach(function (r) { if (r.role === 'setter' && r.access === 'on') rampedMonths += Core.targetMonths(r, lp, c.asOf, GO_LIVE); });
   var needsS = c.live.filter(function (r) { return !r.setter && !Core.excluded(r) && !r.linked_to && Core.day(r.booked_at) >= GO_LIVE; });
   var lbs = {}; [['all', { from: '2000-01-01', to: c.asOf, label: 'All-time' }], ['year', Core.periodRange(c.asOf.slice(0, 4), 'ytd', c.asOf)], ['month', Core.periodRange(c.asOf.slice(0, 4), Number(c.asOf.slice(5, 7)) - 1, c.asOf)], ['period', p]].forEach(function (x) { lbs[x[0]] = { closers: board_(c, x[1], 'closer'), setters: board_(c, x[1], 'setter') }; });
-  return { liveFrom: liveFromLabel_(), at: fmtT_(c.now), gap: c.histEnd ? { from: fmt_(Core.addDays(c.histEnd, 1) + 'T20:00:00Z'), histEnd: fmt_(c.histEnd + 'T20:00:00Z'), inPeriod: p.to > c.histEnd && p.from < GO_LIVE } : null, period: { year: Number(year), key: pk, label: p.label, mode: mode, from: p.from, to: p.to }, years: years_(c), head: head(p), lastYear: hasLy ? Object.assign(head(ly), { label: ly.label }) : null, months: months,
+  return { today: c.asOf, liveFrom: liveFromLabel_(), at: fmtT_(c.now), gap: c.histEnd ? { from: fmt_(Core.addDays(c.histEnd, 1) + 'T20:00:00Z'), histEnd: fmt_(c.histEnd + 'T20:00:00Z'), inPeriod: p.to > c.histEnd && p.from < GO_LIVE } : null, period: { year: Number(year), key: pk, label: p.label, mode: mode, from: p.from, to: p.to }, years: years_(c), head: head(p), lastYear: hasLy ? Object.assign(head(ly), { label: ly.label }) : null, months: months,
     company: mode === 'history' ? histCard_(histTeam, null) : companyCard(co, Math.round(TARGETS.bookedPerMonth * rampedMonths), needsS.length),
     tracked: mode === 'history' ? null : { dm: rate_(co.dmY, co.shows), dmSign: [rate_(co.dmYs, co.dmY), rate_(co.dmNs, co.dmN)], reasons: REASONS.map(function (n, i) { return { name: n, n: co.reasons[i][0], later: co.reasons[i][1] }; }), first: co.fcSales, follow: co.fuSales, rebook: rate_(co.reb14, co.lost), rebookOpen: co.lostOpen },
     setters: setters, closers: closers, targets: { booked: TARGETS.bookedPerMonth, show: Math.round(TARGETS.showRate * 100), close: Math.round(TARGETS.closeRate * 100), closer: TARGETS.closerMonthlyTarget || 0, closerMetric: TARGETS.closerTargetMetric || 'shows' }, leaderboard: lbs, queues: queues_(c), health: health_() };
 }
-function years_(c) { var y = {}; y[c.asOf.slice(0, 4)] = 1; c.hist.forEach(function (h) { y[String(h.appt_date).slice(0, 4)] = 1; }); c.live.forEach(function (r) { var d = Core.day(r.appt_start); if (d) y[d.slice(0, 4)] = 1; }); return Object.keys(y).sort().reverse().map(Number); }
+function years_(c) { var y = {}, cy = Number(c.asOf.slice(0, 4)); y[cy] = 1; c.hist.forEach(function (h) { y[String(h.appt_date).slice(0, 4)] = 1; }); c.live.forEach(function (r) { var d = Core.day(r.appt_start); if (d) y[d.slice(0, 4)] = 1; }); return Object.keys(y).map(Number).filter(function (x) { return x && x <= cy; }).sort(function (a, b) { return b - a; }); } // never a future year
 function closerOptions_(c) {
   var live = c.roster.filter(function (r) { return r.role === 'closer' && r.access === 'on'; }).map(function (r) { return r.name; }), alum = {};
   c.roster.forEach(function (r) { if (r.role === 'closer' && r.access !== 'on') alum[r.name] = 1; });
@@ -2134,7 +2150,7 @@ function LF() { return S.liveFrom; }
 var DM_NOTE = 'Before Nov 14, appointments missing a decision-maker were logged as no-shows.';
 function dmNoShow(from, to) { return !!from && from <= '2026-11-13' && to >= '2026-10-01'; }
 function fn(on) { return on ? h('sup', { class: 'fn', title: DM_NOTE }, '*') : null; }
-function ro() { return false; } // View as is read-only
+function ro(id) { return false; } // View as is read-only (except write-back test appointments, which the CEO may log)
 function saveCache() { try { DEMO_LS.setItem(CKEY, JSON.stringify({ who: S.me && S.me.name, rep: S.me && S.me.role !== 'admin' ? S.rep : null, dc: S.me && S.me.role === 'admin' ? S.dc : null })); } catch (e) { try { DEMO_LS.removeItem(CKEY); } catch (x) {} } }
 function loadCache() { try { return JSON.parse(DEMO_LS.getItem(CKEY) || 'null'); } catch (e) { return null; } }
 function render(node) { app.innerHTML = ''; app.appendChild(node); window.scrollTo(0, 0); }
@@ -2150,7 +2166,7 @@ function grid() { var kids = []; (function add(a) { Array.prototype.forEach.call
 function phead(title, right, lede) { return [h('div', { class: 'phead' }, h('h1', null, title), right ? h('div', { class: 'ctl' }, right) : null), lede ? h('p', { class: 'lede' }, lede) : null]; }
 function chips(list, cur, pick) { return h('div', { class: 'chips', role: 'tablist' }, list.map(function (x) { return h('button', { class: 'chip' + (x[0] === cur ? ' on' : ''), role: 'tab', 'aria-selected': x[0] === cur, onclick: function () { pick(x[0]); } }, x[1]); })); }
 function top() { return [h('div', { class: 'top' }, h('div', { class: 'bar' }, logo(), h('div', { class: 'who' }, S.me ? h('button', { 'aria-label': 'Account', onclick: function () { accountSheet(); } }, S.me.name) : null))),
-  S.viewAs ? h('div', { class: 'viewas', role: 'status' }, 'Viewing as ' + S.viewAs + ' (demo: you can act as them)', h('button', { onclick: function () { exitViewAs(this); } }, 'Exit')) : null]; }
+  S.viewAs ? h('div', { class: 'viewas', role: 'status' }, 'Viewing as ' + S.viewAs + (S.rep && S.rep.testLog && S.rep.testLog.n ? ' (read-only; you can log ' + S.rep.testLog.n + ' test appointment' + (S.rep.testLog.n === 1 ? '' : 's') + ')' : ' (demo: you can act as them)'), h('button', { onclick: function () { exitViewAs(this); } }, 'Exit')) : null]; }
 
 // ---------- sign-in ----------
 // Session bridge: when the app runs inside tracker.hqenergy.ca, the top page keeps the session token in its own storage,
@@ -2215,7 +2231,7 @@ function start() {
 }
 // after sign-in: fetch what the CEO is likely to open next, in the background
 function prefetch() {
-  var now = new Date(), y = now.getFullYear(), m = now.getMonth();
+  var now = curYM(), y = now.y, m = now.m;
   [[y, 'ytd'], [m ? y : y - 1, String(m ? m - 1 : 11)]].forEach(function (k, i) { setTimeout(function () { var key = k[0] + ':' + k[1]; if (!S.dc[key]) api('api_dashboard', k[0], k[1]).then(function (d) { S.dc[key] = d; }, function () {}); }, 300 * (i + 1)); });
   setTimeout(function () { if (!S.team) api('api_team').then(function (t) { S.team = t; if (S.ceoTab === 'team') ceoView(); }, function () {}); }, 100);
 }
@@ -2291,7 +2307,8 @@ function logSheet(a) {
         h('p', { class: 'note' }, 'Adds a follow-up task in GHL for that day.')]);
     }
     var ready = st.outcome && (st.outcome !== 'Showed' || (st.dms && st.result && (st.result === 'Signed' || (st.reason && (st.result !== 'No decision' || st.followOn)))));
-    kids.push(h('button', { class: 'btn block', disabled: !ready || ro(), onclick: function () { busy(this, api('api_logFirstCall', a.id, st.result === 'Signed' ? Object.assign({}, st, { followOn: '' }) : st)).then(function () { s.remove(); S.rep.todo.open = S.rep.todo.open.filter(function (x) { return x.id !== a.id; }); S.rep.todo.today = (S.rep.todo.today || []).filter(function (x) { return x.id !== a.id; }); repView(); toast('Saved'); repLoad(); }, function (e) { fail(e); }); } }, ro() ? 'Read-only (viewing as)' : 'Save'));
+    kids.push(h('button', { class: 'btn block', disabled: !ready || ro(a.id), onclick: function () { busy(this, api('api_logFirstCall', a.id, st.result === 'Signed' ? Object.assign({}, st, { followOn: '' }) : st)).then(function () { s.remove(); S.rep.todo.open = S.rep.todo.open.filter(function (x) { return x.id !== a.id; }); S.rep.todo.today = (S.rep.todo.today || []).filter(function (x) { return x.id !== a.id; }); repView(); toast('Saved'); repLoad(); }, function (e) { fail(e); }); } }, ro(a.id) ? 'Read-only (viewing as)' : 'Save'));
+    if (ro(a.id)) kids.push(h('p', { class: 'note' }, 'View as is read-only. Only appointments of write-back test contacts can be logged here.'));
     kids.forEach(function (k) { if (Array.isArray(k)) k.forEach(function (x) { panel.appendChild(x); }); else if (k) panel.appendChild(k); });
   }
   s = sheet(h('div')); draw();
@@ -2301,11 +2318,11 @@ function followSheet(a) {
   var dt = h('input', { type: 'date', max: loc, value: loc, 'aria-label': 'Signed date' });
   var fo = h('input', { type: 'date', min: loc, value: a.followOn && a.followOn >= loc ? a.followOn : '', 'aria-label': 'Follow up on' });
   var s = sheet([h('h2', { style: 'margin-top:0' }, a.customer), h('div', { class: 'sub' }, 'First call ' + a.when + ' · ' + a.result),
-    h('label', null, 'Follow up on'), h('div', { class: 'fudate' }, fo, h('button', { class: 'btn ghost', disabled: ro(), onclick: function () { if (!fo.value) return fail(new Error('Pick a date')); busy(this, api('api_setFollowUpDate', a.id, fo.value)).then(function () { a.followOn = fo.value; S.rep.todo.follow.forEach(function (x) { if (x.id === a.id) x.followOn = fo.value; }); repView(); toast('Follow-up date saved'); repLoad(); }, fail); } }, 'Save date')),
+    h('label', null, 'Follow up on'), h('div', { class: 'fudate' }, fo, h('button', { class: 'btn ghost', disabled: ro(a.id), onclick: function () { if (!fo.value) return fail(new Error('Pick a date')); busy(this, api('api_setFollowUpDate', a.id, fo.value)).then(function () { a.followOn = fo.value; S.rep.todo.follow.forEach(function (x) { if (x.id === a.id) x.followOn = fo.value; }); repView(); toast('Follow-up date saved'); repLoad(); }, fail); } }, 'Save date')),
     a.followOn ? h('p', { class: 'note' }, 'Currently ' + (a.followOnLabel || a.followOn) + (a.followOn < loc ? ' (passed)' : '') + '. Changing it moves the GHL task.') : h('p', { class: 'note' }, 'No follow-up date yet. Saving one adds a GHL task for that day.'),
     h('label', null, 'Date they signed'), dt,
-    h('div', { style: 'margin-top:16px' }, h('button', { class: 'btn block', disabled: ro(), onclick: function () { busy(this, api('api_closeFollowUp', a.id, dt.value)).then(function () { s.remove(); S.rep.todo.follow = S.rep.todo.follow.filter(function (x) { return x.id !== a.id; }); repView(); toast('Closed on follow-up'); repLoad(); }, fail); } }, 'Closed on follow-up')),
-    h('div', { style: 'margin-top:12px' }, h('button', { class: 'btn ghost block', disabled: ro(), onclick: function () { var b = this; if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = 'Tap again to close out as a no'; return; } busy(b, api('api_followUpNo', a.id)).then(function () { s.remove(); S.rep.todo.follow = S.rep.todo.follow.filter(function (x) { return x.id !== a.id; }); repView(); toast('Closed out as a no'); repLoad(); }, fail); } }, 'Closed out, no sale')),
+    h('div', { style: 'margin-top:16px' }, h('button', { class: 'btn block', disabled: ro(a.id), onclick: function () { busy(this, api('api_closeFollowUp', a.id, dt.value)).then(function () { s.remove(); S.rep.todo.follow = S.rep.todo.follow.filter(function (x) { return x.id !== a.id; }); repView(); toast('Closed on follow-up'); repLoad(); }, fail); } }, 'Closed on follow-up')),
+    h('div', { style: 'margin-top:12px' }, h('button', { class: 'btn ghost block', disabled: ro(a.id), onclick: function () { var b = this; if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = 'Tap again to close out as a no'; return; } busy(b, api('api_followUpNo', a.id)).then(function () { s.remove(); S.rep.todo.follow = S.rep.todo.follow.filter(function (x) { return x.id !== a.id; }); repView(); toast('Closed out as a no'); repLoad(); }, fail); } }, 'Closed out, no sale')),
     h('p', { class: 'note' }, a.overdue ? 'Overdue: ' + a.days + ' days since the call. It stays here until it is signed or closed out.' : 'Stays in Follow-ups until it is signed or closed out.')]);
 }
 function setterTodo(d) {
@@ -2402,7 +2419,10 @@ function repBoard(d) {
 }
 
 // ---------- CEO Dashboard ----------
-function ceoStart(stale) { var now = new Date(); S.year = S.year || now.getFullYear(); S.pk = S.pk || String(now.getMonth()); var d = S.dc[S.year + ':' + S.pk]; if (d) { S.ceo = d; ceoView(); } else if (!stale) ceoLoad(); }
+// today's date in Pacific time (America/Vancouver): the server's date when we have it, else the browser's clock in that zone
+function todayPT() { if (S.ceo && S.ceo.today) return S.ceo.today; try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Vancouver', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); } catch (e) { var n = new Date(); return n.getFullYear() + '-' + ('0' + (n.getMonth() + 1)).slice(-2) + '-' + ('0' + n.getDate()).slice(-2); } }
+function curYM() { var t = todayPT(); return { y: Number(t.slice(0, 4)), m: Number(t.slice(5, 7)) - 1 }; }
+function ceoStart(stale) { var now = curYM(); S.year = S.year || now.y; S.pk = S.pk || String(now.m); var d = S.dc[S.year + ':' + S.pk]; if (d) { S.ceo = d; ceoView(); } else if (!stale) ceoLoad(); }
 // period switches use the client copy when there is one; anything that changes data clears the copies (fresh) and reloads
 function ceoLoad(fresh) {
   var key = S.year + ':' + S.pk;
@@ -2421,8 +2441,9 @@ function ceoView() {
     h('div', { class: 'wrap' }, body, h('div', { class: 'foot' }, h('span', null, 'Last GHL sync ' + d.health.lastSync + (d.health.fails ? ' · ' + d.health.fails + ' failed in a row' : '') + ' · GHL write-back ' + (d.queues.writeback.enabled ? 'on' : 'off')), h('button', { class: 'chip', onclick: function () { busy(this, api('api_syncNow')).then(after('Synced'), fail); } }, 'Sync now')))));
 }
 function periodPicker(d) {
-  var ys = h('select', { 'aria-label': 'Year', onchange: function () { S.year = Number(this.value); ceoLoad(); } }, d.years.map(function (y) { return h('option', { value: y, selected: y === d.period.year }, y); }));
-  var ps = h('select', { 'aria-label': 'Period', onchange: function () { S.pk = this.value; ceoLoad(); } }, [['ytd', 'Year to date'], ['year', 'Full year']].concat(['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map(function (m, i) { return [String(i), m]; })).map(function (o) { return h('option', { value: o[0], selected: o[0] === String(d.period.key) }, o[1]); }));
+  var cur = curYM(); // only the current month and past months; never a future month or year
+  var ys = h('select', { 'aria-label': 'Year', onchange: function () { S.year = Number(this.value); if (S.year === cur.y && /^\d+$/.test(String(S.pk)) && Number(S.pk) > cur.m) S.pk = String(cur.m); ceoLoad(); } }, d.years.filter(function (y) { return y <= cur.y; }).map(function (y) { return h('option', { value: y, selected: y === d.period.year }, y); }));
+  var ps = h('select', { 'aria-label': 'Period', onchange: function () { S.pk = this.value; ceoLoad(); } }, [['ytd', 'Year to date'], ['year', 'Full year']].concat(['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map(function (m, i) { return [String(i), m]; }).filter(function (o) { return d.period.year < cur.y || Number(o[0]) <= cur.m; })).map(function (o) { return h('option', { value: o[0], selected: o[0] === String(d.period.key) }, o[1]); }));
   return h('div', { class: 'picker' }, ys, ps);
 }
 function yoy(cur, ly, isRate) { if (!ly) return ''; var a = isRate ? cur && cur.v : cur, b = isRate ? ly && ly.v : ly; if (a == null || b == null) return ''; return 'Last year ' + (isRate ? Math.round(b * 100) + '%' : b) + ' (' + (a >= b ? '+' : '') + (isRate ? Math.round((a - b) * 100) + ' pts' : (a - b)) + ')'; }
@@ -2498,13 +2519,13 @@ function personSheet(p, role, d) {
   sheet(kids);
 }
 function ceoBoard(d) {
-  var now = new Date(), cy = now.getFullYear(), cm = now.getMonth(), MN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  var now = curYM(), cy = now.y, cm = now.m, MN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var pIsMonth = /^\d+$/.test(String(d.period.key)), pIsCur = pIsMonth && d.period.year === cy && Number(d.period.key) === cm;
   if (S.ceoBoard === 'period' && (!pIsMonth || pIsCur)) S.ceoBoard = 'month';
   var k = S.ceoBoard, role = S.ceoBoardRole, wide = window.innerWidth >= 900, lb = d.leaderboard[k], b = lb[role];
   var pc = [['year', 'This year'], ['all', 'All-time']];
   var mOn = k === 'month' || k === 'period', mSel = k === 'period' ? d.period.year + ':' + d.period.key : cy + ':' + cm, opts = [];
-  d.years.slice().sort(function (a, b) { return b - a; }).forEach(function (y) { for (var i = (y === cy ? cm : 11); i >= 0; i--) opts.push([y + ':' + i, (y === cy && i === cm) ? 'This month' : MN[i] + ' ' + y]); });
+  d.years.filter(function (y) { return y <= cy; }).sort(function (a, b) { return b - a; }).forEach(function (y) { for (var i = (y === cy ? cm : 11); i >= 0; i--) opts.push([y + ':' + i, (y === cy && i === cm) ? 'This month' : MN[i] + ' ' + y]); });
   if (!mOn) { opts.unshift(['', 'Month']); mSel = ''; }
   var msel = h('select', { class: 'chip chipsel' + (mOn ? ' on' : ''), 'aria-label': 'Month', onchange: function () { if (!this.value) return; var v = this.value.split(':'), y = Number(v[0]), i = Number(v[1]); if (y === cy && i === cm) { S.ceoBoard = 'month'; ceoView(); } else { S.year = y; S.pk = String(i); S.ceoBoard = 'period'; ceoLoad(); } } }, opts.map(function (o) { return h('option', { value: o[0], selected: o[0] === mSel }, o[1]); }));
   function sc(r) { return r === 'closers' ? sortChips('closer', S.boardSort, function (x) { S.boardSort = x; ceoView(); }) : sortChips('setter', S.setSort, function (x) { S.setSort = x; ceoView(); }); }
