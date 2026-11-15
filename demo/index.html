@@ -52,7 +52,7 @@ h1{font-size:24px;line-height:1.2;letter-spacing:-.01em;margin:0 0 var(--s2)} h2
 .chip{flex:none;min-height:40px;padding:0 var(--s2);border-radius:999px;border:1px solid var(--line);background:var(--w);cursor:pointer;font-size:14px}
 .chip.on{background:var(--k);color:var(--w);border-color:var(--k)}
 .chips .chips{display:contents} select.chipsel{width:136px;flex:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%230B0B0B' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-size:12px 8px;min-height:40px;padding:0 34px 0 var(--s2);border-radius:999px;font-size:14px;background-position:right 12px center} select.chipsel.on{color:var(--w);background-color:var(--k);background-repeat:no-repeat;background-size:12px 8px;background-position:right 12px center;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23FFFFFF' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")} select.chipsel option{color:#0B0B0B;background:#fff}
-.opt{display:grid;gap:var(--s1);grid-template-columns:repeat(auto-fit,minmax(120px,1fr));margin:var(--s1) 0 var(--s2)}
+.opt{display:grid;gap:var(--s1);grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin:var(--s1) 0 var(--s2)}
 .opt button{min-height:var(--tap);border:1px solid var(--line);border-radius:var(--r);background:var(--w);cursor:pointer}
 .opt button.on{background:var(--k);color:var(--w);border-color:var(--k)}
 .item{display:flex;align-items:center;gap:var(--s2);min-height:64px;padding:10px var(--s2);background:var(--w);border:1px solid var(--line);border-radius:var(--r);margin-bottom:var(--s1);cursor:pointer;width:100%;text-align:left;box-shadow:var(--shadow);font:inherit;color:inherit}
@@ -244,7 +244,7 @@ function __demoSeed() {
   function pickCloser() { var x = rnd(), a = 0; for (var i = 0; i < closers.length; i++) { a += closers[i].w; if (x < a) return closers[i]; } return closers[0]; }
   var setters = [ // bookings per day, show probability (others no-show/cancel)
     { name: 'Blake', rate: 2.5, show: 0.80 }, { name: 'Avery', rate: 2.4, show: 0.78 }, { name: 'Parker', rate: 1.2, show: 0.74 },
-    { name: 'Emerson', rate: 2.3, show: 0.45 }, { name: 'Reese', rate: 1.0, show: 0.92, ramp: true }];
+    { name: 'Emerson', rate: 2.3, show: 0.45 }, { name: 'Reese', rate: 1.0, show: 0.92, independent: true }];
   var FIRST = ['Jamie', 'Robin', 'Casey', 'Morgan', 'Taylor', 'Jessie', 'Kerry', 'Lou', 'Sydney', 'Frankie', 'Charlie', 'Dakota', 'Hayden', 'Kendall', 'Logan', 'Marley', 'Noel', 'Rowan', 'Sage', 'Shay', 'Toby', 'Wren', 'Ari', 'Bo', 'Cam', 'Dale', 'Eden', 'Finn', 'Gale', 'Hollis', 'Indy', 'Jules', 'Kit', 'Lane', 'Mika', 'Nico', 'Oakley', 'Perry', 'Quill', 'Remy', 'Sasha', 'Tatum', 'Umi', 'Vale', 'Winter', 'Yael', 'Zuri', 'Alby', 'Brook', 'Corey', 'Devon', 'Ellis', 'Fran', 'Glen', 'Harper', 'Iggy', 'Jody', 'Kai', 'Lee', 'Mo'];
   var LAST = ['Example', 'Sample', 'Placeholder', 'Demo', 'Madeup', 'Pretend', 'Fictional', 'Lorem', 'Ipsum', 'Mockford', 'Fakesley', 'Notreal', 'Testerson', 'Sampleton', 'Mockingham', 'Dummyfield', 'Pretendo', 'Inventa'];
   var used = {}, nid = 0;
@@ -255,7 +255,7 @@ function __demoSeed() {
   return { live: live, run: function () {
     LAUNCH_ROSTER = [{ name: CEO, full_name: 'Quin (CEO)', role: 'admin', email: 'ceo@example.com' }]
       .concat(closers.map(function (c) { return { name: c.name, full_name: c.name + ' Sample', role: 'closer', email: c.name.toLowerCase() + '@example.com' }; }))
-      .concat(setters.map(function (s) { return { name: s.name, full_name: s.name + ' Sample', role: 'setter', email: s.name.toLowerCase() + '@example.com' }; }));
+      .concat(setters.map(function (s) { return { name: s.name, full_name: s.name + ' Sample', role: s.independent ? 'independent_setter' : 'setter', email: s.name.toLowerCase() + '@example.com' }; }));
     // history: tracker-sheet rows from Jan 1 to the live start (plus an alumni closer and setter for the all-time board)
     var hist = [], hc = closers.map(function (c) { return c.name; }).concat(['Riley']), hs = setters.filter(function (s) { return !s.ramp; }).map(function (s) { return s.name; }).concat(['Quinn-Lee']);
     for (var d = Y + '-01-01'; d < live; d = Core.addDays(d, 1)) {
@@ -265,7 +265,7 @@ function __demoSeed() {
     }
     HISTORY_ROWS = hist; CLOSER_HINT_ROWS = [];
     setupSheet();
-    // roster details: Reese joined 10 days ago (in ramp); everyone can "sign in" with a demo session
+    // roster details: Reese is an independent setter (no booking target, show-rate status only); everyone can "sign in" with a demo session
     var ro = readTab_('Roster'); ro.rows.forEach(function (r) { var s = setters.filter(function (x) { return x.name === r.name; })[0]; if (s && s.ramp) { r.start_date = Core.addDays(today, -10); r.added_by = CEO; } r.last_sign_in = nowIso_(); });
     writeTab_('Roster', ro.rows);
     ro.rows.forEach(function (r) { var tok = 'demo-' + r.name.toLowerCase(); DEMO_TOKENS[r.name] = tok; appendRow_('Sessions', { token_hash: hash_(tok), rep: r.name, email: r.email, method: 'demo', created_at: nowIso_(), expires_at: 'never', revoked: '' }); });
@@ -353,6 +353,17 @@ var BACKFILL_FROM = '2026-09-01';       // GHL's sales calendars hold appointmen
 var SALES_CALENDAR_RE = /(HQ Virtual Solar Consultation|HQ Meta Consultation Direct Booking)/i;
 var META_CALENDAR_RE = /Meta Consultation Direct Booking/i;
 var META_DIRECT = 'Meta Direct';
+// Roles. Independent setters use the setter app and counts, but have no booking target (Quin, Nov 14 2026).
+var ROLE_SETTER = 'setter', ROLE_INDEPENDENT = 'independent_setter', ROLE_CLOSER = 'closer', ROLE_ADMIN = 'admin';
+function isSetterRole(r) { return r === ROLE_SETTER || r === ROLE_INDEPENDENT; }
+function hasBookedTarget(r) { return r === ROLE_SETTER; }
+function roleLabel(r) { return r === ROLE_INDEPENDENT ? 'Independent setter' : r === ROLE_SETTER ? 'Setter' : r === ROLE_CLOSER ? 'Closer' : r === ROLE_ADMIN ? 'Admin' : (r || ''); }
+function roleAllowed_(have, want) {
+  if (!want || !want.length) return true;
+  if (want.indexOf(have) >= 0) return true;
+  if (isSetterRole(have) && want.indexOf('setter') >= 0) return true;
+  return false;
+}
 var SETTER_FIELD_KEY = 'contact.appointment_setter_name';
 var PIPELINE_NAME = 'HQ Sales';
 var STAGE = { signed: 'Contract Signed', declined: 'Declined Proposal', nurture: 'Follow-up/Nurture', lost: 'Cancelled Appt/No Show' };
@@ -457,7 +468,7 @@ var Core = (function () {
   }
   // users: optional {ghlUserId: {name, email}}; GHL often stores the setter's GHL login email in the field
   function buildMatcher(roster, aliases, users) {
-    var setters = roster.filter(function (r) { return r.role === 'setter'; });
+    var setters = roster.filter(function (r) { return r.role === 'setter' || r.role === 'independent_setter'; });
     var al = {}; (aliases || []).forEach(function (a) { if (a.spelling && a.setter) al[norm(a.spelling)] = a.setter; });
     var em = {};
     Object.keys(users || {}).forEach(function (k) { var u = users[k]; if (!u.email) return; var first = norm(u.name).split(' ')[0]; setters.forEach(function (r) { if (norm(r.name) === first) em[String(u.email).toLowerCase()] = r.name; }); });
@@ -936,7 +947,7 @@ var Core = (function () {
       bump(se, h.setter, 'booked', 1); bump(se, h.setter, 'shows', sh); bump(se, h.setter, 'resolved', 1); bump(se, h.setter, 'appts', 1); bump(se, h.setter, 'sales', c);
     });
     function finish(map, countKey, num, den, role) {
-      var list = Object.keys(map).map(function (k) { var x = map[k]; x.rate = x[den] ? x[num] / x[den] : 0; x.rankable = x[den] > 0; if (role === 'setter') x.setSale = x.appts ? x.sales / x.appts : null; var ro = onRoster[x.name], cur = !!ro && ro.access === 'on'; x.alumni = !cur; x.otherRole = cur && ro.role !== role ? ro.role : ''; return x; })
+      var list = Object.keys(map).map(function (k) { var x = map[k]; x.rate = x[den] ? x[num] / x[den] : 0; x.rankable = x[den] > 0; if (role === 'setter') x.setSale = x.appts ? x.sales / x.appts : null; var ro = onRoster[x.name], cur = !!ro && ro.access === 'on'; x.alumni = !cur; x.independent = cur && ro.role === 'independent_setter'; var same = ro && (ro.role === role || (role === 'setter' && (ro.role === 'setter' || ro.role === 'independent_setter'))); x.otherRole = cur && !same ? ro.role : ''; return x; })
         .filter(function (x) { return x[countKey] > 0 || x[den] > 0; });
       var byCount = list.slice().sort(function (a, b) { return b[countKey] - a[countKey] || b.rate - a.rate || (a.name < b.name ? -1 : 1); });
       var byRate = list.filter(function (x) { return x.rankable; }).sort(function (a, b) { return b.rate - a.rate || b[countKey] - a[countKey]; });
@@ -1011,7 +1022,10 @@ var Core = (function () {
     return [{ job_key: r.appt_id + '|ninote|' + String(r.rebook_note_at || '').replace(/\D/g, '').slice(0, 14), action: 'note', payload: { contactId: r.contact_id, body: 'HQ Tracker | Not interested (' + setter + '): ' + note } }];
   }
 
-  return { setDayFn: setDayFn, day: day, between: between, addDays: addDays, norm: norm, buildMatcher: buildMatcher, applySync: applySync, metrics: metrics, active: active,
+  function isSetterRole(r) { return r === 'setter' || r === 'independent_setter'; }
+  function hasBookedTarget(r) { return r === 'setter'; }
+  function roleLabel(r) { return r === 'independent_setter' ? 'Independent setter' : r === 'setter' ? 'Setter' : r === 'closer' ? 'Closer' : r === 'admin' ? 'Admin' : (r || ''); }
+  return { setDayFn: setDayFn, day: day, between: between, addDays: addDays, norm: norm, buildMatcher: buildMatcher, applySync: applySync, metrics: metrics, active: active, isSetterRole: isSetterRole, hasBookedTarget: hasBookedTarget, roleLabel: roleLabel,
     periodRange: periodRange, lastYear: lastYear, targetMonths: targetMonths, closerQueues: closerQueues, rebookList: rebookList, lostLabel: lostLabel,
     isLost: isLost, excluded: excluded, planFirstCall: planFirstCall, planFollowUp: planFollowUp, planFollowUpNo: planFollowUpNo, planFollowUpTask: planFollowUpTask, planTaskDone: planTaskDone, taskTag: taskTag, followupsClosedInGhl: followupsClosedInGhl, closedOutRecently: closedOutRecently, followOpen: followOpen, followClosed: followClosed, FOLLOW_OVERDUE: FOLLOW_OVERDUE, DUE_AFTER_MIN: DUE_AFTER_MIN, planNotInterested: planNotInterested, STATUS_FOR: STATUS_FOR, MONTHS: MONTHS, histMetrics: histMetrics, trackedMode: trackedMode, headline: headline, leaderboard: leaderboard, NON_PEOPLE: NON_PEOPLE, clientKey: clientKey, matchCloserHint: matchCloserHint, needsCloser: needsCloser, liveRows: liveRows, statRows: statRows, extraPre: extraPre, gapRow: gapRow, adminIdent: adminIdent, parseTracker: parseTracker, isTestName: isTestName, isTest: isTest, markSameDay: markSameDay, groupByContact: groupByContact, ghlExcluded: ghlExcluded, dupCheck: dupCheck, nameScore: nameScore, nameVariants: nameVariants };
 })();
@@ -1113,9 +1127,11 @@ function setterBookedText(booked, target, opts) {
 function setterCard(m, team, targetMonths, opts) {
   const card = { strengths: [], gaps: [], thin: [] };
   const tgtBooked = Math.ceil(TARGETS.bookedPerMonth * targetMonths - 1e-9);
-  if (targetMonths < TARGETS.minTargetMonths) card.thin.push("Bookings (too little of the period counts yet, or it is their first-month ramp)");
-  else if (m.booked < tgtBooked) card.gaps.push({ text: setterBookedText(m.booked, tgtBooked, opts), fixes: ["Check doors versus bookings in Terros. If you're low on doors, knock more. If you're getting conversations but not bookings, drill the setter framework, discovery and objection handling with your manager."] });
-  else card.strengths.push(setterBookedText(m.booked, tgtBooked, opts) + ' Strong door volume; keep the daily routine that got you here.');
+  if (!(opts && opts.noBookedTarget)) {
+    if (targetMonths < TARGETS.minTargetMonths) card.thin.push("Bookings (too little of the period counts yet, or it is their first-month ramp)");
+    else if (m.booked < tgtBooked) card.gaps.push({ text: setterBookedText(m.booked, tgtBooked, opts), fixes: ["Check doors versus bookings in Terros. If you're low on doors, knock more. If you're getting conversations but not bookings, drill the setter framework, discovery and objection handling with your manager."] });
+    else card.strengths.push(setterBookedText(m.booked, tgtBooked, opts) + ' Strong door volume; keep the daily routine that got you here.');
+  }
   judge([
     { name: "Show rate", val: m.resolved ? m.shows / m.resolved : 0, team: team.resolved ? team.shows / team.resolved : 0, target: TARGETS.showRate, higherBetter: true, enough: m.resolved >= TARGETS.minResolved, shown: fr(m.shows, m.resolved, TARGETS.showRate), need: `${m.resolved} of ${TARGETS.minResolved} appointments`, praise: "Your homeowners show up prepared; keep running Prepare and Lock-in the same way.", fixes: ["Run Prepare and Lock-in on every booking: both homeowners home, Hydro bill out, laptop or tablet ready, 30 to 45 minutes seated. Before you leave, ask: 'If anything comes up and you need to cancel or reschedule, will you please call and let us know?' Wait for a solid yes."] },
     { name: "All decision-makers present", val: m.shows ? m.dmY / m.shows : 0, team: team.shows ? team.dmY / team.shows : 0, target: TARGETS.dmPresent, higherBetter: true, enough: m.shows >= TARGETS.minShows, shown: fr(m.dmY, m.shows, TARGETS.dmPresent), need: `${m.shows} of ${TARGETS.minShows} shows`, praise: "Closers get every owner on the call; that is why your shows convert.", fixes: ["Build enough value at the door that everyone on the title wants to be on the call, and don't book until they've agreed."] },
@@ -1545,7 +1561,7 @@ function requireUser_(tok, roles) {
   var rep = readTab_('Roster').rows.filter(function (r) { return r.name === s.rep; })[0];
   if (!isActive_(rep)) throw new Error('ACCESS_OFF');
   if (s.revoked) throw new Error('SIGNED_OUT');
-  if (roles && roles.indexOf(rep.role) < 0) throw new Error('Not allowed');
+  if (roles && !roleAllowed_(rep.role, roles)) throw new Error('Not allowed');
   return rep;
 }
 function signOut(tok) { var t = readTab_('Sessions'), h = hash_(tok); t.rows.forEach(function (x) { if (x.token_hash === h) x.revoked = nowIso_(); }); writeTab_('Sessions', t.rows); return { ok: true }; }
@@ -1686,7 +1702,7 @@ function repData_(c, me) {
     if (mode !== 'history') {
       var m = Core.metrics(mine, p, c.asOf), tm = withCoach ? Core.metrics(team, p, c.asOf) : null;
       if (role === 'closer') { o.numbers = closerNums_(m); if (withCoach) o.coaching = closerCard(m, tm); }
-      else { var tmo = Core.targetMonths(me, p, c.asOf, GO_LIVE); o.numbers = setterNums_(m, tmo); o.numbers.sales = { n: hd.sales }; /* same count as People and the leaderboard (tracker history included) */ o.numbers.booked = { n: bookedFor_(c, me.name, full), target: Math.ceil(TARGETS.bookedPerMonth * paceMonths_(c, me, full) - 1e-9), today: full.to >= c.asOf }; if (withCoach) o.coaching = setterCard(Object.assign({}, m, { booked: o.numbers.booked.n }), tm, paceMonths_(c, me, full), bookedOpts_(full, c.asOf)); }
+      else { var tmo = Core.targetMonths(me, p, c.asOf, GO_LIVE), pace = hasBookedTarget(me.role) ? Math.ceil(TARGETS.bookedPerMonth * paceMonths_(c, me, full) - 1e-9) : null; o.numbers = setterNums_(m, tmo); o.numbers.sales = { n: hd.sales }; /* same count as People and the leaderboard (tracker history included) */ o.numbers.booked = { n: bookedFor_(c, me.name, full), target: pace, today: full.to >= c.asOf, noTarget: !hasBookedTarget(me.role) }; if (withCoach) o.coaching = setterCard(Object.assign({}, m, { booked: o.numbers.booked.n }), tm, paceMonths_(c, me, full), bookedOpts_(full, c.asOf, { noBookedTarget: !hasBookedTarget(me.role) })); }
     }
     // tracker-history months (before the live start): the headline People shows, so the numbers screen is never empty
     o.head = { appts: hd.appts, shows: hd.shows, resolved: hd.resolved, sales: hd.sales, signedFromShows: hd.signedFromShows };
@@ -1731,8 +1747,8 @@ function viewingAs_(tok) { return tok ? CacheService.getScriptCache().get(impKey
 // every write API calls this first: nothing can be saved while the CEO is viewing as someone
 function guardWrite_(tok) { if (viewingAs_(tok)) throw new Error('Read-only while viewing as another person. Exit View as first.'); }
 function api_viewAs(tok, name) {
-  var me = requireUser_(tok, ['admin']), c = ctx_(), rep = current_(c, name) || c.roster.filter(function (r) { return r.name === name && (r.role === 'closer' || r.role === 'setter'); })[0];
-  if (!rep || (rep.role !== 'closer' && rep.role !== 'setter')) throw new Error('Pick a closer or setter');
+  var me = requireUser_(tok, ['admin']), c = ctx_(), rep = current_(c, name) || c.roster.filter(function (r) { return r.name === name && (r.role === 'closer' || isSetterRole(r.role)); })[0];
+  if (!rep || (rep.role !== 'closer' && !isSetterRole(rep.role))) throw new Error('Pick a closer or setter');
   CacheService.getScriptCache().put(impKey_(tok), rep.name, 21600);
   log_(me.name, 'view_as_start', '', rep.name);
   var d = cached_('rep:' + rep.name + ':' + Math.floor(Date.now() / 600000), function () { return repData_(c, rep); }); d.viewingAs = true;
@@ -1850,7 +1866,7 @@ function histCard_(h, team) {
 }
 function people_(c, p, role) {
   var key = role === 'closer' ? 'closer' : 'setter', names = {};
-  c.roster.forEach(function (r) { if (r.role === role) names[r.name] = 1; });
+  c.roster.forEach(function (r) { if (r.role === role || (role === 'setter' && isSetterRole(r.role))) names[r.name] = 1; });
   c.stat.forEach(function (r) { if (r[key] && Core.day(r.appt_start) >= p.from && Core.day(r.appt_start) <= p.to) names[r[key]] = 1; });
   c.hist.forEach(function (h) { var d = String(h.appt_date).slice(0, 10); if (d >= p.from && d <= p.to && h[key]) names[h[key]] = 1; });
   return Object.keys(names).filter(function (n) { return !isAdminName_(c, n) && (role === 'setter' ? (n === META_DIRECT || !Core.NON_PEOPLE[n]) : !Core.NON_PEOPLE[n]); });
@@ -1901,11 +1917,14 @@ function status_(c, p, role, n, rep, hd) {
   // val = the number shown in the pill; sub = the target line under it
   function add(k, label, state, txt, val, sub) { items.push({ k: k, label: label, state: state, txt: txt, val: val, sub: sub }); }
   var cur = p.to >= c.asOf, pc = function (r) { return r == null ? '-' : Math.round(r * 100) + '%'; };
-  if (role === 'setter') {
+  if (isSetterRole(role) || isSetterRole(rep && rep.role)) {
     var booked = bookedFor_(c, n, p);
-    var pace = Math.ceil(TARGETS.bookedPerMonth * tm - 1e-9);
-    if (pace <= 0) add('booked', 'bookings', 'ramp', 'Booked ' + booked + ' · in ramp, no target yet', booked, 'in ramp');
-    else add('booked', 'bookings', booked >= pace ? 'ok' : 'behind', 'Booked ' + booked + ' of ' + pace + (cur ? ' by today' : ''), booked, 'of ' + pace + (cur ? ' by today' : ''));
+    // independent setters have no booking target or pace line; status is show rate only (Quin, Nov 14 2026)
+    if (hasBookedTarget((rep && rep.role) || role)) {
+      var pace = Math.ceil(TARGETS.bookedPerMonth * tm - 1e-9);
+      if (pace <= 0) add('booked', 'bookings', 'ramp', 'Booked ' + booked + ' · in ramp, no target yet', booked, 'in ramp');
+      else add('booked', 'bookings', booked >= pace ? 'ok' : 'behind', 'Booked ' + booked + ' of ' + pace + (cur ? ' by today' : ''), booked, 'of ' + pace + (cur ? ' by today' : ''));
+    }
     var sr = hd.resolved ? hd.shows / hd.resolved : null;
     // show rate = showed / (showed + no-show + cancelled); judged from the first outcome; 'na' (not judged) only with zero outcomes
     add('show', 'show rate', !hd.resolved ? 'na' : sr >= TARGETS.showRate ? 'ok' : 'behind', 'Show ' + pc(sr) + ' · ' + hd.shows + ' of ' + hd.resolved, pc(sr), 'target ' + Math.round(TARGETS.showRate * 100) + '%');
@@ -1935,20 +1954,20 @@ function dashData_(year, pk) {
   var histTeam = Core.histMetrics(c.hist, p, GO_LIVE), byName = {}; c.roster.forEach(function (r) { byName[r.name] = r; });
   function person(role, n) {
     var key = role === 'closer' ? 'closer' : 'setter', ph = personHd_(c, p, role, n), m = ph.m, h = ph.h, hd = ph.hd, rep = byName[n];
-    var cur = current_(c, n), own = cur && cur.role === role;
-    var o = { name: n, alumni: !cur && n !== META_DIRECT, otherRole: cur && !own ? cur.role : '', canView: !!cur, appts: hd.appts, show: rate_(hd.shows, hd.resolved), close: rate_(hd.signedFromShows, hd.shows), sales: hd.sales, setSale: role === 'setter' ? rate_(hd.sales, hd.appts) : null, booked: role === 'setter' ? bookedFor_(c, n, p) : null }; // setters: signed appointments they set (by setter of the appointment, history included where the sheet names a setter)
+    var cur = current_(c, n), own = cur && (cur.role === role || (role === 'setter' && isSetterRole(cur.role)));
+    var o = { name: n, alumni: !cur && n !== META_DIRECT, otherRole: cur && !own ? cur.role : '', independent: !!(cur && cur.role === ROLE_INDEPENDENT), canView: !!cur, appts: hd.appts, show: rate_(hd.shows, hd.resolved), close: rate_(hd.signedFromShows, hd.shows), sales: hd.sales, setSale: role === 'setter' ? rate_(hd.sales, hd.appts) : null, booked: role === 'setter' ? bookedFor_(c, n, p) : null }; // setters: signed appointments they set (by setter of the appointment, history included where the sheet names a setter)
     o.status = own && n !== META_DIRECT ? status_(c, p, role, n, rep, hd) : null;
-    if (mode !== 'history') { o.live = role === 'closer' ? closerNums_(m) : setterNums_(m, own ? Core.targetMonths(rep, lp, c.asOf, GO_LIVE) : 0); }
+    if (mode !== 'history') { o.live = role === 'closer' ? closerNums_(m) : setterNums_(m, own && hasBookedTarget(cur.role) ? Core.targetMonths(rep, lp, c.asOf, GO_LIVE) : 0); }
     if (n === META_DIRECT) o.card = null;
     else if (mode === 'history') o.card = histCard_(h, histTeam);
-    else o.card = role === 'closer' ? closerCard(m, teamC) : setterCard(Object.assign({}, m, { booked: bookedFor_(c, n, p) }), teamS, own ? paceMonths_(c, rep, p) : 0, bookedOpts_(p, c.asOf));
+    else o.card = role === 'closer' ? closerCard(m, teamC) : setterCard(Object.assign({}, m, { booked: bookedFor_(c, n, p) }), teamS, own ? paceMonths_(c, rep, p) : 0, bookedOpts_(p, c.asOf, { noBookedTarget: !(own && hasBookedTarget(cur.role)) }));
     return o;
   }
   var setters = people_(c, p, 'setter').map(function (n) { return person('setter', n); }).filter(function (x) { return x.appts > 0 || !x.alumni; }).sort(function (a, b) { return b.appts - a.appts; });
   var closers = people_(c, p, 'closer').map(function (n) { return person('closer', n); }).filter(function (x) { return x.appts > 0 || !x.alumni; }).sort(function (a, b) { return b.sales - a.sales; });
   // booked coaching: month-to-date (or the selected period), same count as the Overview Booked tile, paced from the period start not the live start
   var companyBooked = companyBooked_(c, p), rampedMonths = 0, nSetters = 0;
-  if (companyBooked != null) c.roster.forEach(function (r) { if (r.role === 'setter' && r.access === 'on') { var tm = paceMonths_(c, r, p); rampedMonths += tm; if (tm > 0) nSetters++; } });
+  if (companyBooked != null) c.roster.forEach(function (r) { if (hasBookedTarget(r.role) && r.access === 'on') { var tm = paceMonths_(c, r, p); rampedMonths += tm; if (tm > 0) nSetters++; } });
   var needsS = c.live.filter(function (r) { return !r.setter && !Core.excluded(r) && !r.linked_to && Core.day(r.booked_at) >= GO_LIVE; });
   var lbs = {}; [['all', { from: '2000-01-01', to: c.asOf, label: 'All-time' }], ['year', Core.periodRange(c.asOf.slice(0, 4), 'ytd', c.asOf)], ['month', Core.periodRange(c.asOf.slice(0, 4), Number(c.asOf.slice(5, 7)) - 1, c.asOf)], ['period', p]].forEach(function (x) { lbs[x[0]] = { closers: board_(c, x[1], 'closer'), setters: board_(c, x[1], 'setter') }; });
   return { today: c.asOf, liveFrom: liveFromLabel_(), at: fmtT_(c.now), gap: c.histEnd ? { from: fmt_(Core.addDays(c.histEnd, 1) + 'T20:00:00Z'), histEnd: fmt_(c.histEnd + 'T20:00:00Z'), inPeriod: p.to > c.histEnd && p.from < GO_LIVE } : null, period: { year: Number(year), key: pk, label: p.label, mode: mode, from: p.from, to: p.to }, years: years_(c), head: head(p), lastYear: hasLy ? Object.assign(head(ly), { label: ly.label }) : null, months: months,
@@ -2033,12 +2052,12 @@ function api_team(tok) {
   return { former: c.roster.filter(function (r) { return r.access === 'former'; }).map(function (r) { return { name: r.name, role: r.role }; }),
     roster: c.roster.filter(function (r) { return r.role !== 'admin' && r.access !== 'former'; }).map(function (r) { return { name: r.name, full_name: r.full_name, role: r.role, email: r.email, access: r.access, last: r.last_sign_in ? fmtT_(r.last_sign_in) : '', method: r.sign_in_method, pw: !!pwSet[r.name] }; }),
     unknowns: readTab_('Unknowns').rows.filter(function (u) { return u.status === 'open' && !admin.is(u.value); }).map(function (u) { return { kind: u.kind, value: u.value, count: u.count, ghl_user_id: u.ghl_user_id }; }),
-    setters: c.roster.filter(function (r) { return r.role === 'setter'; }).map(function (r) { return r.name; }) };
+    setters: c.roster.filter(function (r) { return isSetterRole(r.role); }).map(function (r) { return r.name; }) };
 }
 function cleanName_(n) { n = String(n || '').trim().replace(/\s+/g, ' '); if (!n || n.length > 40) throw new Error('Enter a name'); return n; }
 function api_teamAdd(tok, x) { guardWrite_(tok);
   var me = requireUser_(tok, ['admin']), name = cleanName_(x.name), email = String(x.email || '').trim().toLowerCase();
-  if (['setter', 'closer'].indexOf(x.role) < 0) throw new Error('Pick setter or closer');
+  if (['setter', 'independent_setter', 'closer'].indexOf(x.role) < 0) throw new Error('Pick setter, independent setter or closer');
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('Check the email');
   var rep = withLock_(function () {
     var t = readTab_('Roster');
@@ -2057,9 +2076,14 @@ function api_teamUpdate(tok, name, x) { guardWrite_(tok);
     var t = readTab_('Roster'), r = t.rows.filter(function (z) { return z.name === name; })[0]; if (!r) throw new Error('Not found');
     if (email && t.rows.some(function (z) { return z !== r && String(z.email).toLowerCase() === email; })) throw new Error('That email is already used');
     var changed = email !== String(r.email).toLowerCase(); r.email = email; if (x.full_name) r.full_name = x.full_name;
+    if (x.role && x.role !== r.role) {
+      if (['setter', 'independent_setter', 'closer'].indexOf(x.role) < 0) throw new Error('Pick setter, independent setter or closer');
+      r.role = x.role; log_(me.name, 'team_role', '', name + ' -> ' + x.role);
+    }
     if (changed) revokeAll_(name);
     writeTab_('Roster', t.rows); rep = r; sent = changed && !!email && r.access === 'on'; log_(me.name, 'team_update', '', name);
   });
+  if (rep && rep.role === 'closer') try { linkCloserIds_(); } catch (e) {}
   if (sent) sendSignIn_(rep, INVITE_DAYS * 1440, "You're invited to HQ Tracker");
   return { ok: true, invited: sent };
 }
@@ -2199,6 +2223,16 @@ function fail(e) { toast(e.message.replace(/^Error: /, '')); }
 // busy(button, promise): spinner + disabled right away, restored when the call ends
 function busy(btn, pr) { if (btn) { btn.classList.add('busy'); btn.disabled = true; } var done = function () { if (btn) { btn.classList.remove('busy'); btn.disabled = false; } }; pr.then(done, done); return pr; }
 function LF() { return S.liveFrom; }
+function isSetter(role) { return role === 'setter' || role === 'independent_setter'; }
+function roleLabel(role) { return role === 'independent_setter' ? 'Independent setter' : role === 'setter' ? 'Setter' : role === 'closer' ? 'Closer' : role === 'admin' ? 'Admin' : (role || ''); }
+var ROLE_OPTS = [['setter', 'Setter'], ['independent_setter', 'Independent setter'], ['closer', 'Closer']];
+function rolePick(cur, onPick) {
+  var wrap = h('div', { class: 'opt' });
+  ROLE_OPTS.forEach(function (pair) {
+    wrap.appendChild(h('button', { type: 'button', class: pair[0] === cur ? 'on' : '', 'data-role': pair[0], onclick: function () { onPick(pair[0]); Array.prototype.forEach.call(wrap.children, function (c) { c.className = c.getAttribute('data-role') === pair[0] ? 'on' : ''; }); } }, pair[1]));
+  });
+  return wrap;
+}
 // Oct 1 to Nov 13, 2026: the team logged appointments missing a decision-maker as no-shows (Quin). Footnote only; numbers unchanged.
 var DM_NOTE = 'Before Nov 14, appointments missing a decision-maker were logged as no-shows.';
 function dmNoShow(from, to) { return !!from && from <= '2026-11-13' && to >= '2026-10-01'; }
@@ -2397,14 +2431,15 @@ function noteSheet(a) {
 // the rep's own pace, same pills and chip as the CEO People tab (private: only their own)
 function myPace(d) {
   if (!d.status) return null;
-  var p = { status: d.status }, setter = d.me.role === 'setter', t = S.rep && S.rep.targets;
+  var p = { status: d.status }, setter = isSetter(d.me.role), indy = d.me.role === 'independent_setter', t = S.rep && S.rep.targets;
+  var bookedN = d.numbers && d.numbers.booked && d.numbers.booked.n != null ? d.numbers.booked.n : '-';
   return h('div', { class: 'card pace' }, h('div', { class: 'phd' }, h('div', { class: 'lbl' }, 'My pace · ' + d.period.label), stTag(p)),
-    h('div', { class: 'mps' }, setter ? [mp(p, 'booked', '-', 'Booked'), mp(p, 'show', '-', 'Show rate')] : [mp(p, 'pace', '-', 'Sales'), mp(p, 'close', '-', 'Close rate')]),
-    h('p', { class: 'note', style: 'margin:10px 0 0' }, 'Green = at or above target so far, red = behind. ' + (setter ? 'Target: ' + (t ? t.booked : 50) + ' bookings a month paced by day and ' + (t ? t.show : 60) + '% show rate.' : 'Target: ' + (t ? t.closer : 10) + ' sales a month paced by day and ' + (t ? t.close : 20) + '% close rate.')));
+    h('div', { class: 'mps' }, setter ? [mp(p, 'booked', bookedN, 'Booked'), mp(p, 'show', '-', 'Show rate')] : [mp(p, 'pace', '-', 'Sales'), mp(p, 'close', '-', 'Close rate')]),
+    h('p', { class: 'note', style: 'margin:10px 0 0' }, 'Green = at or above target so far, red = behind. ' + (indy ? 'Target: ' + (t ? t.show : 60) + '% show rate. No booking target.' : setter ? 'Target: ' + (t ? t.booked : 50) + ' bookings a month paced by day and ' + (t ? t.show : 60) + '% show rate.' : 'Target: ' + (t ? t.closer : 10) + ' sales a month paced by day and ' + (t ? t.close : 20) + '% close rate.')));
 }
 // months before the live start: the same headline People shows (from the 2025 and 2026 trackers; no decision-maker or reason detail)
 function histNums(d) {
-  var x = d.head || {}, setter = d.me.role === 'setter';
+  var x = d.head || {}, setter = isSetter(d.me.role);
   return [grid(stat('Appointments', x.appts || 0, 'From the tracker sheets'), stat('Shows', x.shows || 0, (x.resolved || 0) + ' with an outcome'), setter || !d.status ? stat(setter ? 'Sales from your sets' : 'Sales', x.sales || 0, 'Signed') : null),
     h('p', { class: 'sub' }, 'Before ' + LF() + ' the numbers come from the 2025 and 2026 tracker sheets, so decision-maker, reason and rebook detail is not available.')];
 }
@@ -2413,8 +2448,8 @@ function repNumbers(d) {
   if (!n) return out.concat(histNums(d));
   if (d.period.mode === 'span') out.push(h('p', { class: 'sub' }, 'From ' + LF() + '.'));
   var pc = !!d.status; // the pace card already shows booked/show (setters) and sales/close rate (closers); don't repeat them with different counting
-  if (d.me.role === 'setter') out.push(grid(
-    pc ? null : stat('Booked', n.booked.n, (n.booked.today ? 'Pace ' + n.booked.target + ' by today' : 'Target ' + n.booked.target), 'Bookings you made, counted by the day you booked them. Appointments marked Invalid in GHL do not count. Standard: 50 a month, paced by day.'),
+  if (isSetter(d.me.role)) out.push(grid(
+    pc ? null : stat('Booked', n.booked.n, n.booked.noTarget ? 'No booking target' : (n.booked.today ? 'Pace ' + n.booked.target + ' by today' : 'Target ' + n.booked.target), n.booked.noTarget ? 'Bookings you made, counted by the day you booked them. Independent setters have no monthly booking target.' : 'Bookings you made, counted by the day you booked them. Appointments marked Invalid in GHL do not count. Standard: 50 a month, paced by day.'),
     pc ? null : stat('Show rate', pct(n.show), of(n.show, 'held'), 'Standard 60% or better. Pending appointments are not counted yet.'),
     stat('Rebook rate', pct(n.rebook), of(n.rebook, 'rebooked in 14 days'), 'Cancels and no-shows that got a new appointment within 14 days.'),
     stat('Close rate on your shows', pct(n.close), of(n.close, 'signed in 30 days'), 'Shows past their 30-day window.'),
@@ -2439,9 +2474,9 @@ function coachView(card) {
 function repCoaching(d) { return [h('h1', null, 'Coaching'), periodChips(d), d.period.mode === 'span' ? h('p', { class: 'sub' }, 'From ' + LF() + '.') : null, coachView(d.coaching)]; }
 // closers rank by sales or close rate; setters rank by bookings or by sales from their sets (show rate stays a supporting figure)
 function boardList(b, role, me, medals, sort) {
-  var setter = role === 'setter', list = setter ? (sort === 'sales' && b.bySales ? b.bySales : b.byCount) : (sort === 'rate' ? b.byRate : b.byCount);
+  var setter = isSetter(role), list = setter ? (sort === 'sales' && b.bySales ? b.bySales : b.byCount) : (sort === 'rate' ? b.byRate : b.byCount);
   if (!list.length) return h('div', { class: 'empty' }, !setter && sort === 'rate' ? 'No shows yet.' : 'No results yet.');
-  function pillOf(x) { var pill = x.alumni ? 'alumni' : x.otherRole ? 'also ' + x.otherRole : ''; return pill ? h('div', { class: 'pill' }, h('span', { class: 'tag mute' }, pill)) : null; }
+  function pillOf(x) { var pill = x.alumni ? 'alumni' : x.independent ? 'independent' : x.otherRole ? 'also ' + roleLabel(x.otherRole) : ''; return pill ? h('div', { class: 'pill' }, h('span', { class: 'tag mute' }, pill)) : null; }
   if (setter) {
     var bySales = sort === 'sales';
     return h('div', { class: 'card board' }, h('div', { class: 'rank s4 hd' }, h('div'), h('div', { class: 'lc' }, 'Setter'), h('div', { class: 'rc' + (bySales ? '' : ' on') }, 'Booked'), h('div', { class: 'rc' + (bySales ? ' on' : '') }, 'Sales')),
@@ -2467,7 +2502,7 @@ function repBoard(d) {
     h('div', { class: 'row', style: 'margin:-8px 0 16px' }, ['year', 'all'].map(function (x) { return h('button', { class: 'chip' + (k === x ? ' on' : ''), onclick: function () { S.board = x; repView(); } }, x === 'year' ? 'This year' : 'All-time'); })),
     h('p', { class: 'sub' }, k === 'last' ? 'Final standings, ' + b.label + '.' : k === 'month' ? b.label + '. Live, resets on the 1st.' : b.label + (b.histLabel ? '. Includes the 2025 and 2026 trackers.' : '.')),
     role === 'closer' ? sortChips('closer', S.boardSort, function (x) { S.boardSort = x; repView(); }) : sortChips('setter', S.setSort, function (x) { S.setSort = x; repView(); }),
-    boardList(b, role, d.me.name, k === 'last', role === 'closer' ? S.boardSort : S.setSort),
+    boardList(b, role === 'closer' ? 'closer' : 'setter', d.me.name, k === 'last', role === 'closer' ? S.boardSort : S.setSort),
     h('p', { class: 'note' }, role === 'closer' ? 'Close rate is sales divided by shows.' : 'Sales are signed deals on appointments you set.')];
 }
 
@@ -2535,14 +2570,14 @@ function mp(p, k, plain, label) {
   if (it.state === 'na') return h('div', { class: 'mp na' }, label ? h('div', { class: 'ml' }, label) : null, h('div', { class: 'mv' }, '-'), h('div', { class: 'ms' }, it.sub));
   return h('div', { class: 'mp ' + it.state }, label ? h('div', { class: 'ml' }, label) : null, h('div', { class: 'mv' }, it.val), h('div', { class: 'ms' }, it.sub));
 }
-function stLegend(d) { var t = d.targets || { booked: 50, show: 60, close: 20, closer: 10 }; return 'Green = at or above target so far this month, red = behind (grey = in ramp, or no outcomes yet). Setters: ' + t.booked + ' bookings a month paced by day, ' + t.show + '% show rate (cancellations count). Closers: ' + t.closer + ' ' + (t.closerMetric === 'shows' ? 'shows' : 'sales') + ' a month paced by day, ' + t.close + '% close rate. On track needs both.'; }
+function stLegend(d) { var t = d.targets || { booked: 50, show: 60, close: 20, closer: 10 }; return 'Green = at or above target so far this month, red = behind (grey = in ramp, or no outcomes yet). Setters: ' + t.booked + ' bookings a month paced by day, ' + t.show + '% show rate (cancellations count). Independent setters have no booking target; their status is show rate only. Closers: ' + t.closer + ' ' + (t.closerMetric === 'shows' ? 'shows' : 'sales') + ' a month paced by day, ' + t.close + '% close rate. On track needs both.'; }
 function sits(p) { return p.close && p.close.d != null ? p.close.d : 0; } // sits = shows; close rate = sales / sits
 function ceoPeople(d) {
   function rowCells(p, role) {
     return role === 'closer' ? [mp(p, 'pace', p.sales), mp(p, 'close', pct(p.close)), sits(p)]
       : [mp(p, 'booked', p.booked), mp(p, 'show', pct(p.show)), p.sales];
   }
-  function pill(p) { return p.alumni ? h('span', { class: 'tag mute', style: 'margin-left:8px' }, 'alumni') : p.otherRole ? h('span', { class: 'tag mute', style: 'margin-left:8px' }, 'also ' + p.otherRole) : null; }
+  function pill(p) { return p.alumni ? h('span', { class: 'tag mute', style: 'margin-left:8px' }, 'alumni') : p.independent ? h('span', { class: 'tag mute', style: 'margin-left:8px' }, 'independent') : p.otherRole ? h('span', { class: 'tag mute', style: 'margin-left:8px' }, 'also ' + roleLabel(p.otherRole)) : null; }
   function list(title, rows, role) {
     if (!rows.length) return null;
     return [h('h2', null, title), rows.map(function (p) {
@@ -2623,7 +2658,7 @@ function dropUnknown(u) { S.team.unknowns = S.team.unknowns.filter(function (x) 
 function teamView() {
   var t = S.team; if (!t) return h('div', { class: 'spin' });
   var nm = h('input', { type: 'text', placeholder: 'First name', 'aria-label': 'Name' }), em = h('input', { type: 'email', placeholder: 'Email (any provider)', 'aria-label': 'Email' }), role = 'setter';
-  var rolePick = h('div', { class: 'opt' }, ['setter', 'closer'].map(function (r) { var b = h('button', { class: r === role ? 'on' : '', onclick: function () { role = r; Array.prototype.forEach.call(rolePick.children, function (c) { c.className = c.textContent.toLowerCase() === r ? 'on' : ''; }); } }, r === 'setter' ? 'Setter' : 'Closer'); return b; }));
+  var roleBtns = rolePick(role, function (r) { role = r; });
   var out = [phead('Team', null, 'Who can sign in, and names GHL sends that are not on the team.')];
   if (t.unknowns.length) out.push(h('h2', null, 'Names seen in GHL that are not on the team'), t.unknowns.map(function (u) {
     return h('div', { class: 'item att', style: 'cursor:default;flex-wrap:wrap' }, h('div', { class: 'main' }, h('div', { class: 't' }, u.value), h('div', { class: 's' }, u.kind + ' · ' + u.count + (Number(u.count) === 1 ? ' appointment' : ' appointments'))),
@@ -2634,19 +2669,19 @@ function teamView() {
   }));
   out.push(h('h2', null, 'People'), h('div', { class: 'card', style: 'padding:8px' }, t.roster.map(function (r) {
     var tg = h('button', { class: 'toggle' + (r.access === 'on' ? ' on' : ''), role: 'switch', 'aria-checked': r.access === 'on', 'aria-label': 'Access for ' + r.name, onclick: function () { var on = r.access !== 'on'; if (!on && !confirm('Turn off ' + r.name + '? They are signed out right away.')) return; var was = r.access; r.access = on ? 'on' : 'off'; ceoView(); api('api_teamAccess', r.name, on).then(function () { S.dc = {}; }, function (e) { r.access = was; ceoView(); fail(e); }); } });
-    return h('div', { class: 'trow' }, h('div', { class: 'nm' }, r.name, h('div', { class: 'sub', style: 'font-weight:400' }, r.role + ' · ' + (r.email || 'No email yet') + (r.pw ? ' · password set' : '') + (r.last ? ' · last in ' + r.last : ''))),
+    return h('div', { class: 'trow' }, h('div', { class: 'nm' }, r.name, h('div', { class: 'sub', style: 'font-weight:400' }, roleLabel(r.role) + ' · ' + (r.email || 'No email yet') + (r.pw ? ' · password set' : '') + (r.last ? ' · last in ' + r.last : ''))),
       h('div', { class: 'acts' }, r.access === 'on' ? h('button', { class: 'chip', onclick: function () { viewAs(r.name, this); } }, 'View as') : null,
         h('button', { class: 'chip', onclick: function () { editSheet(r); } }, 'Edit'), tg));
   })));
-  if (t.former && t.former.length) out.push(h('p', { class: 'note' }, 'Former reps (names only, no sign-in): ' + t.former.map(function (f) { return f.name + ' (' + f.role + ')'; }).join(', ') + '.'));
-  out.push(h('h2', null, 'Add someone'), h('div', { class: 'card' }, h('label', null, 'Name'), nm, h('label', null, 'Email'), em, h('label', null, 'Role'), rolePick,
+  if (t.former && t.former.length) out.push(h('p', { class: 'note' }, 'Former reps (names only, no sign-in): ' + t.former.map(function (f) { return f.name + ' (' + roleLabel(f.role) + ')'; }).join(', ') + '.'));
+  out.push(h('h2', null, 'Add someone'), h('div', { class: 'card' }, h('label', null, 'Name'), nm, h('label', null, 'Email'), em, h('label', null, 'Role'), roleBtns,
     h('button', { class: 'btn block', onclick: function () { teamAct(this, api('api_teamAdd', { name: nm.value, email: em.value, role: role }), function (r) { return r.invited ? 'Added and sign-in link sent' : 'Added'; }); } }, 'Add and send sign-in link')));
   return out;
 }
 function editSheet(r) {
-  var em = h('input', { type: 'email', value: r.email || '', 'aria-label': 'Email' }), fn = h('input', { type: 'text', value: r.full_name || '', 'aria-label': 'Full name' });
-  var s = sheet([h('h2', { style: 'margin-top:0' }, r.name), h('label', null, 'Full name'), fn, h('label', null, 'Email'), em,
-    h('div', { class: 'row', style: 'margin-top:16px' }, h('button', { class: 'btn', style: 'flex:1', onclick: function () { busy(this, api('api_teamUpdate', r.name, { email: em.value, full_name: fn.value })).then(function (x) { s.remove(); toast(x.invited ? 'Saved and sign-in link sent' : 'Saved'); teamLoad(); }, fail); } }, 'Save'),
+  var em = h('input', { type: 'email', value: r.email || '', 'aria-label': 'Email' }), fn = h('input', { type: 'text', value: r.full_name || '', 'aria-label': 'Full name' }), role = r.role;
+  var s = sheet([h('h2', { style: 'margin-top:0' }, r.name), h('label', null, 'Full name'), fn, h('label', null, 'Email'), em, h('label', null, 'Role'), rolePick(role, function (v) { role = v; }),
+    h('div', { class: 'row', style: 'margin-top:16px' }, h('button', { class: 'btn', style: 'flex:1', onclick: function () { busy(this, api('api_teamUpdate', r.name, { email: em.value, full_name: fn.value, role: role })).then(function (x) { s.remove(); toast(x.invited ? 'Saved and sign-in link sent' : 'Saved'); teamLoad(); S.dc = {}; }, fail); } }, 'Save'),
       r.email && r.access === 'on' ? h('button', { class: 'btn ghost', style: 'flex:1', onclick: function () { busy(this, api('api_teamResend', r.name)).then(function () { toast('Link sent'); }, fail); } }, 'Resend link') : null),
     r.pw ? h('div', { style: 'margin-top:8px' }, h('button', { class: 'btn ghost block', onclick: function () { if (!confirm('Clear ' + r.name + '\'s password? They can still sign in with an emailed link or code and set a new one.')) return; busy(this, api('api_teamClearPassword', r.name)).then(function () { s.remove(); toast('Password cleared'); teamLoad(); }, fail); } }, 'Clear password')) : null]);
 }
