@@ -890,6 +890,8 @@ var Core = (function () {
   }
   var FOLLOW_OVERDUE = 30, DUE_AFTER_MIN = 60;
   function followClosed(r) { var v = String(r.followup_closed || '').toLowerCase(); return v === 'true' || v === 'no'; }
+  var REOPEN_DAYS = 90; // a close-out this recent can still turn into a sale from GHL
+  function closedOutRecently(r, asOf) { var at = r.followup_submitted_at; return r.outcome === 'Showed' && r.first_call_result !== 'Signed' && String(r.followup_closed || '').toLowerCase() === 'no' && !r.signed_date && !!at && !!day(at) && between(day(at), asOf) <= REOPEN_DAYS; }
   function followOpen(r) { return r.outcome === 'Showed' && r.first_call_result !== 'Signed' && !followClosed(r) && !r.signed_date; }
   function rebookList(rows, setterName, asOf) {
     return rows.filter(function (r) {
@@ -978,9 +980,16 @@ var Core = (function () {
   // Two-way close: an open follow-up whose HQ Sales opportunity moved to Contract Signed or Declined Proposal in GHL after the first call.
   // opps: contactId -> { stage: 'signed' | 'declined', changedAt }; ours: appt_id + '|' + stage for stage moves the tracker itself made (never echoed back).
   function followupsClosedInGhl(rows, opps, ours, asOf) {
-    var out = [];
+    var out = [], later = {}; // contact -> latest appointment start; a sale after a close-out goes to the latest appointment, never twice
+    rows.forEach(function (r) { if (r.contact_id && r.appt_start && !r.linked_to && !excluded(r) && (!later[r.contact_id] || ms(r.appt_start) > ms(later[r.contact_id]))) later[r.contact_id] = r.appt_start; });
     rows.forEach(function (r) {
-      if (!r.closer || r.linked_to || !followOpen(r)) return;
+      if (!r.closer || r.linked_to) return;
+      if (!followOpen(r)) { // signed after all: closed out as a no in the last 90 days, then the deal moved to Contract Signed in GHL after the close-out
+        if (!closedOutRecently(r, asOf) || excluded(r) || ms(later[r.contact_id]) > ms(r.appt_start)) return;
+        var oc = opps[r.contact_id]; if (!oc || oc.stage !== 'signed' || ours[r.appt_id + '|signed'] || !oc.changedAt || !(ms(oc.changedAt) > ms(r.followup_submitted_at))) return;
+        var dc = day(oc.changedAt); if (!dc || dc < day(r.appt_start) || dc > asOf) dc = asOf;
+        out.push({ row: r, kind: 'signed', date: dc, reopened: true }); return;
+      }
       var o = opps[r.contact_id]; if (!o || (o.stage !== 'signed' && o.stage !== 'declined')) return;
       if (ours[r.appt_id + '|' + o.stage]) return;
       var since = r.first_call_submitted_at ? ms(r.first_call_submitted_at) : ms(r.appt_start);
@@ -1004,7 +1013,7 @@ var Core = (function () {
 
   return { setDayFn: setDayFn, day: day, between: between, addDays: addDays, norm: norm, buildMatcher: buildMatcher, applySync: applySync, metrics: metrics, active: active,
     periodRange: periodRange, lastYear: lastYear, targetMonths: targetMonths, closerQueues: closerQueues, rebookList: rebookList, lostLabel: lostLabel,
-    isLost: isLost, excluded: excluded, planFirstCall: planFirstCall, planFollowUp: planFollowUp, planFollowUpNo: planFollowUpNo, planFollowUpTask: planFollowUpTask, planTaskDone: planTaskDone, taskTag: taskTag, followupsClosedInGhl: followupsClosedInGhl, followOpen: followOpen, followClosed: followClosed, FOLLOW_OVERDUE: FOLLOW_OVERDUE, DUE_AFTER_MIN: DUE_AFTER_MIN, planNotInterested: planNotInterested, STATUS_FOR: STATUS_FOR, MONTHS: MONTHS, histMetrics: histMetrics, trackedMode: trackedMode, headline: headline, leaderboard: leaderboard, NON_PEOPLE: NON_PEOPLE, clientKey: clientKey, matchCloserHint: matchCloserHint, needsCloser: needsCloser, liveRows: liveRows, statRows: statRows, extraPre: extraPre, gapRow: gapRow, adminIdent: adminIdent, parseTracker: parseTracker, isTestName: isTestName, isTest: isTest, markSameDay: markSameDay, groupByContact: groupByContact, ghlExcluded: ghlExcluded, dupCheck: dupCheck, nameScore: nameScore, nameVariants: nameVariants };
+    isLost: isLost, excluded: excluded, planFirstCall: planFirstCall, planFollowUp: planFollowUp, planFollowUpNo: planFollowUpNo, planFollowUpTask: planFollowUpTask, planTaskDone: planTaskDone, taskTag: taskTag, followupsClosedInGhl: followupsClosedInGhl, closedOutRecently: closedOutRecently, followOpen: followOpen, followClosed: followClosed, FOLLOW_OVERDUE: FOLLOW_OVERDUE, DUE_AFTER_MIN: DUE_AFTER_MIN, planNotInterested: planNotInterested, STATUS_FOR: STATUS_FOR, MONTHS: MONTHS, histMetrics: histMetrics, trackedMode: trackedMode, headline: headline, leaderboard: leaderboard, NON_PEOPLE: NON_PEOPLE, clientKey: clientKey, matchCloserHint: matchCloserHint, needsCloser: needsCloser, liveRows: liveRows, statRows: statRows, extraPre: extraPre, gapRow: gapRow, adminIdent: adminIdent, parseTracker: parseTracker, isTestName: isTestName, isTest: isTest, markSameDay: markSameDay, groupByContact: groupByContact, ghlExcluded: ghlExcluded, dupCheck: dupCheck, nameScore: nameScore, nameVariants: nameVariants };
 })();
 
 // ---- Coaching.js
@@ -1079,12 +1088,34 @@ function judge(st, card) {
     }
   }
 }
-function setterCard(m, team, targetMonths) {
+// Booked coaching uses the same window as the Overview Booked tile / People pace (month to date, not clipped to the live start).
+function bookedWhen(opts) {
+  opts = opts || {};
+  if (opts.scope === 'year') return opts.current ? 'this year' : (opts.label || 'that year');
+  if (opts.current) return 'this month';
+  const lab = String(opts.label || '').replace(/\s+\d{4}$/, '');
+  return lab ? 'in ' + lab : 'this month';
+}
+function companyBookedText(booked, target, opts) {
+  opts = opts || {};
+  const n = opts.setterCount;
+  const who = n > 0 ? `50 a month for each of ${n} setter${n === 1 ? '' : 's'}` : '50 a month for each ramped setter';
+  const when = bookedWhen(opts);
+  if (opts.current !== false) return `Booked ${booked} ${when}. On pace you'd have ${target} by today (${who}).`;
+  return `Booked ${booked} ${when}. The target was ${target} (${who}).`;
+}
+function setterBookedText(booked, target, opts) {
+  opts = opts || {};
+  const when = bookedWhen(opts);
+  if (opts.current !== false) return `Booked ${booked} ${when}. On pace you'd have ${target} by today (50 a month).`;
+  return `Booked ${booked} ${when}. The target was ${target} (50 a month).`;
+}
+function setterCard(m, team, targetMonths, opts) {
   const card = { strengths: [], gaps: [], thin: [] };
-  const tgtBooked = Math.round(TARGETS.bookedPerMonth * targetMonths);
+  const tgtBooked = Math.ceil(TARGETS.bookedPerMonth * targetMonths - 1e-9);
   if (targetMonths < TARGETS.minTargetMonths) card.thin.push("Bookings (too little of the period counts yet, or it is their first-month ramp)");
-  else if (m.booked < tgtBooked) card.gaps.push({ text: `Booked ${m.booked} against a target of ${tgtBooked} (50 a month).`, fixes: ["Check doors versus bookings in Terros. If you're low on doors, knock more. If you're getting conversations but not bookings, drill the setter framework, discovery and objection handling with your manager."] });
-  else card.strengths.push(`Booked ${m.booked} against a target of ${tgtBooked}. Strong door volume; keep the daily routine that got you here.`);
+  else if (m.booked < tgtBooked) card.gaps.push({ text: setterBookedText(m.booked, tgtBooked, opts), fixes: ["Check doors versus bookings in Terros. If you're low on doors, knock more. If you're getting conversations but not bookings, drill the setter framework, discovery and objection handling with your manager."] });
+  else card.strengths.push(setterBookedText(m.booked, tgtBooked, opts) + ' Strong door volume; keep the daily routine that got you here.');
   judge([
     { name: "Show rate", val: m.resolved ? m.shows / m.resolved : 0, team: team.resolved ? team.shows / team.resolved : 0, target: TARGETS.showRate, higherBetter: true, enough: m.resolved >= TARGETS.minResolved, shown: fr(m.shows, m.resolved, TARGETS.showRate), need: `${m.resolved} of ${TARGETS.minResolved} appointments`, praise: "Your homeowners show up prepared; keep running Prepare and Lock-in the same way.", fixes: ["Run Prepare and Lock-in on every booking: both homeowners home, Hydro bill out, laptop or tablet ready, 30 to 45 minutes seated. Before you leave, ask: 'If anything comes up and you need to cancel or reschedule, will you please call and let us know?' Wait for a solid yes."] },
     { name: "All decision-makers present", val: m.shows ? m.dmY / m.shows : 0, team: team.shows ? team.dmY / team.shows : 0, target: TARGETS.dmPresent, higherBetter: true, enough: m.shows >= TARGETS.minShows, shown: fr(m.dmY, m.shows, TARGETS.dmPresent), need: `${m.shows} of ${TARGETS.minShows} shows`, praise: "Closers get every owner on the call; that is why your shows convert.", fixes: ["Build enough value at the door that everyone on the title wants to be on the call, and don't book until they've agreed."] },
@@ -1109,12 +1140,12 @@ function closerCard(m, team) {
   if (tb >= 0) card.gaps.push({ text: `You lose more first calls than the team to ${RNAMES[tb]} (${m.reasons[tb][0]} appointments, ${m.reasons[tb][1]} later signed).`, fixes: CLOSER_BLOCKER_FIX[tb] });
   return card;
 }
-function companyCard(m, bookedTarget, needsSetter) {
+function companyCard(m, bookedTarget, needsSetter, opts) {
   const card = { strengths: [], gaps: [], thin: [] };
   const sales = m.fcSales + m.fuSales;
   if (bookedTarget > 0) {
-    if (m.booked < bookedTarget) card.gaps.push({ text: `Booked ${m.booked} against ${bookedTarget} (50 a month for each ramped setter).`, fixes: ["Check whether the shortfall is too few setters or setters below pace. Hire into open seats, or have managers drill framework and objections with whoever is behind."] });
-    else card.strengths.push(`Booked ${m.booked} against ${bookedTarget}. The setting teams are hitting volume.`);
+    if (m.booked < bookedTarget) card.gaps.push({ text: companyBookedText(m.booked, bookedTarget, opts), fixes: ["Check whether the shortfall is too few setters or setters below pace. Hire into open seats, or have managers drill framework and objections with whoever is behind."] });
+    else card.strengths.push(companyBookedText(m.booked, bookedTarget, opts) + ' The setting teams are hitting volume.');
   }
   judge([
     { name: "Show rate", val: m.resolved ? m.shows / m.resolved : 0, team: -1, target: TARGETS.showRate, higherBetter: true, enough: m.resolved >= TARGETS.minResolved, shown: fr(m.shows, m.resolved, TARGETS.showRate), need: `${m.resolved} of ${TARGETS.minResolved} appointments`, praise: "Booking preparation is working.", fixes: ["Have managers check that every setter runs Prepare and Lock-in, including the cancel or reschedule ask, and review no-shows weekly."] },
@@ -1352,20 +1383,23 @@ function dryRunSync() {
 // Two-way close (read-only GHL): an open follow-up whose HQ Sales opportunity is now in Contract Signed or Declined Proposal, moved there in GHL
 // after the first call, is closed here (source GHL). No stage or note job is queued for these (the change came from GHL); only the task-complete job.
 function closeFollowUpsFromGhl_(rows, now) {
-  var open = rows.filter(function (r) { return r.closer && !r.linked_to && Core.followOpen(r); }); if (!open.length) return 0;
+  var asOf = today_(), open = rows.filter(function (r) { return r.closer && !r.linked_to && (Core.followOpen(r) || Core.closedOutRecently(r, asOf)); }); if (!open.length) return 0;
   var pl = ghlPipeline_(), opps = {};
   [['signed', pl.stages[STAGE.signed]], ['declined', pl.stages[STAGE.declined]]].forEach(function (s) {
     if (!s[1]) return;
     ghlStageOpps_(pl.id, s[1]).forEach(function (o) { var at = o.lastStageChangeAt || o.updatedAt || ''; var cur = opps[o.contactId]; if (o.contactId && (!cur || String(at) > String(cur.changedAt))) opps[o.contactId] = { stage: s[0], changedAt: at }; });
   });
   var ours = {}; readTab_('WriteBack').rows.forEach(function (j) { if (j.action === 'stage' && j.status === 'done') { try { ours[j.appt_id + '|' + JSON.parse(j.payload).stage] = 1; } catch (e) {} } });
-  var hits = Core.followupsClosedInGhl(open, opps, ours, today_()); if (!hits.length) return 0;
+  var hits = Core.followupsClosedInGhl(rows, opps, ours, asOf); // all rows: a close-out is skipped when the contact has a later appointment if (!hits.length) return 0;
   hits.forEach(function (h) {
-    var r = h.row; r.followup_submitted_at = now; r.followup_submitted_by = 'GHL'; r.followup_source = 'GHL';
+    var r = h.row; if (h.reopened) h.was = r.followup_submitted_by + ' ' + r.followup_submitted_at; r.followup_submitted_at = now; r.followup_submitted_by = 'GHL'; r.followup_source = 'GHL';
     if (h.kind === 'signed') { r.followup_closed = 'true'; r.signed_date = h.date; r.sale_type = 'Follow-up'; } else r.followup_closed = 'no';
   });
   writeTab_('Appointments', rows);
-  hits.forEach(function (h) { enqueue_(h.row, Core.planTaskDone(h.row)); log_('GHL', h.kind === 'signed' ? 'followup_closed_ghl' : 'followup_no_ghl', h.row.appt_id, h.kind === 'signed' ? h.date : ''); });
+  hits.forEach(function (h) {
+    // signed after a close-out: no write-back at all (the GHL task was already completed at the close-out)
+    if (h.reopened) { log_('GHL', 'signed_after_closeout_ghl', h.row.appt_id, 'Signed ' + h.date + ' (Contract Signed in GHL after the close-out by ' + h.was + ')'); return; }
+    enqueue_(h.row, Core.planTaskDone(h.row)); log_('GHL', h.kind === 'signed' ? 'followup_closed_ghl' : 'followup_no_ghl', h.row.appt_id, h.kind === 'signed' ? h.date : ''); });
   return hits.length;
 }
 
@@ -1652,7 +1686,7 @@ function repData_(c, me) {
     if (mode !== 'history') {
       var m = Core.metrics(mine, p, c.asOf), tm = withCoach ? Core.metrics(team, p, c.asOf) : null;
       if (role === 'closer') { o.numbers = closerNums_(m); if (withCoach) o.coaching = closerCard(m, tm); }
-      else { var tmo = Core.targetMonths(me, p, c.asOf, GO_LIVE); o.numbers = setterNums_(m, tmo); o.numbers.sales = { n: hd.sales }; /* same count as People and the leaderboard (tracker history included) */ o.numbers.booked = { n: bookedFor_(c, me.name, full), target: Math.ceil(TARGETS.bookedPerMonth * paceMonths_(c, me, full) - 1e-9), today: full.to >= c.asOf }; if (withCoach) o.coaching = setterCard(m, tm, tmo); }
+      else { var tmo = Core.targetMonths(me, p, c.asOf, GO_LIVE); o.numbers = setterNums_(m, tmo); o.numbers.sales = { n: hd.sales }; /* same count as People and the leaderboard (tracker history included) */ o.numbers.booked = { n: bookedFor_(c, me.name, full), target: Math.ceil(TARGETS.bookedPerMonth * paceMonths_(c, me, full) - 1e-9), today: full.to >= c.asOf }; if (withCoach) o.coaching = setterCard(Object.assign({}, m, { booked: o.numbers.booked.n }), tm, paceMonths_(c, me, full), bookedOpts_(full, c.asOf)); }
     }
     // tracker-history months (before the live start): the headline People shows, so the numbers screen is never empty
     o.head = { appts: hd.appts, shows: hd.shows, resolved: hd.resolved, sales: hd.sales, signedFromShows: hd.signedFromShows };
@@ -1845,6 +1879,16 @@ function paceMonths_(c, rep, p) {
   var st = rep && rep.start_date && rep.added_by !== 'setup' ? String(rep.start_date).slice(0, 10) : '', rampEnd = st && st > GO_LIVE ? Core.addDays(st, 30) : '';
   return Core.targetMonths({ start_date: '', end_date: rep ? rep.end_date : '' }, { from: rampEnd > p.from ? rampEnd : p.from, to: p.to }, c.asOf, '2000-01-01');
 }
+// wording flags for the booked coaching line (current vs past, month vs year)
+function bookedOpts_(p, asOf, extra) {
+  var year = /year/i.test(p.label);
+  return Object.assign({ current: p.to >= asOf, scope: year ? 'year' : 'month', label: year ? '' : p.label }, extra || {});
+}
+// company booked: same window as the Overview Booked tile (full period, GHL by booking date; hidden before the Sep 1 backfill)
+function companyBooked_(c, p) {
+  if (p.from < BACKFILL_FROM) return null;
+  return Core.metrics(c.all, p, c.asOf).booked;
+}
 // headline numbers for one person over a period (live + pre-cutoff GHL + tracker history); shared by People and the rep apps
 function personHd_(c, p, role, n) {
   var key = role === 'closer' ? 'closer' : 'setter', mode = Core.trackedMode(p, GO_LIVE), lp = clip_(p, GO_LIVE);
@@ -1897,16 +1941,18 @@ function dashData_(year, pk) {
     if (mode !== 'history') { o.live = role === 'closer' ? closerNums_(m) : setterNums_(m, own ? Core.targetMonths(rep, lp, c.asOf, GO_LIVE) : 0); }
     if (n === META_DIRECT) o.card = null;
     else if (mode === 'history') o.card = histCard_(h, histTeam);
-    else o.card = role === 'closer' ? closerCard(m, teamC) : setterCard(m, teamS, own ? Core.targetMonths(rep, lp, c.asOf, GO_LIVE) : 0);
+    else o.card = role === 'closer' ? closerCard(m, teamC) : setterCard(Object.assign({}, m, { booked: bookedFor_(c, n, p) }), teamS, own ? paceMonths_(c, rep, p) : 0, bookedOpts_(p, c.asOf));
     return o;
   }
   var setters = people_(c, p, 'setter').map(function (n) { return person('setter', n); }).filter(function (x) { return x.appts > 0 || !x.alumni; }).sort(function (a, b) { return b.appts - a.appts; });
   var closers = people_(c, p, 'closer').map(function (n) { return person('closer', n); }).filter(function (x) { return x.appts > 0 || !x.alumni; }).sort(function (a, b) { return b.sales - a.sales; });
-  var rampedMonths = 0; c.roster.forEach(function (r) { if (r.role === 'setter' && r.access === 'on') rampedMonths += Core.targetMonths(r, lp, c.asOf, GO_LIVE); });
+  // booked coaching: month-to-date (or the selected period), same count as the Overview Booked tile, paced from the period start not the live start
+  var companyBooked = companyBooked_(c, p), rampedMonths = 0, nSetters = 0;
+  if (companyBooked != null) c.roster.forEach(function (r) { if (r.role === 'setter' && r.access === 'on') { var tm = paceMonths_(c, r, p); rampedMonths += tm; if (tm > 0) nSetters++; } });
   var needsS = c.live.filter(function (r) { return !r.setter && !Core.excluded(r) && !r.linked_to && Core.day(r.booked_at) >= GO_LIVE; });
   var lbs = {}; [['all', { from: '2000-01-01', to: c.asOf, label: 'All-time' }], ['year', Core.periodRange(c.asOf.slice(0, 4), 'ytd', c.asOf)], ['month', Core.periodRange(c.asOf.slice(0, 4), Number(c.asOf.slice(5, 7)) - 1, c.asOf)], ['period', p]].forEach(function (x) { lbs[x[0]] = { closers: board_(c, x[1], 'closer'), setters: board_(c, x[1], 'setter') }; });
   return { today: c.asOf, liveFrom: liveFromLabel_(), at: fmtT_(c.now), gap: c.histEnd ? { from: fmt_(Core.addDays(c.histEnd, 1) + 'T20:00:00Z'), histEnd: fmt_(c.histEnd + 'T20:00:00Z'), inPeriod: p.to > c.histEnd && p.from < GO_LIVE } : null, period: { year: Number(year), key: pk, label: p.label, mode: mode, from: p.from, to: p.to }, years: years_(c), head: head(p), lastYear: hasLy ? Object.assign(head(ly), { label: ly.label }) : null, months: months,
-    company: mode === 'history' ? histCard_(histTeam, null) : companyCard(co, Math.round(TARGETS.bookedPerMonth * rampedMonths), needsS.length),
+    company: mode === 'history' ? histCard_(histTeam, null) : companyCard(Object.assign({}, co, { booked: companyBooked || 0 }), companyBooked == null ? 0 : Math.round(TARGETS.bookedPerMonth * rampedMonths), needsS.length, bookedOpts_(p, c.asOf, { setterCount: nSetters })),
     tracked: mode === 'history' ? null : { dm: rate_(co.dmY, co.shows), dmSign: [rate_(co.dmYs, co.dmY), rate_(co.dmNs, co.dmN)], reasons: REASONS.map(function (n, i) { return { name: n, n: co.reasons[i][0], later: co.reasons[i][1] }; }), first: co.fcSales, follow: co.fuSales, rebook: rate_(co.reb14, co.lost), rebookOpen: co.lostOpen },
     setters: setters, closers: closers, targets: { booked: TARGETS.bookedPerMonth, show: Math.round(TARGETS.showRate * 100), close: Math.round(TARGETS.closeRate * 100), closer: TARGETS.closerMonthlyTarget || 0, closerMetric: TARGETS.closerTargetMetric || 'shows' }, leaderboard: lbs, queues: queues_(c), health: health_() };
 }
